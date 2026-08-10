@@ -301,11 +301,14 @@
           '<div class="field"><label>' + t("pay.cardName") + '</label><input class="input" id="p-name" placeholder="' + t("pay.cardName") + '" value="' + SSX.helpers.esc(state.cardName) + '"></div>' +
           '<div class="field"><label>' + t("pay.cardNumber") + '</label><input class="input" id="p-num" inputmode="numeric" placeholder="4242 4242 4242 4242" value="' + SSX.helpers.esc(state.cardNumber) + '"></div>' +
           '<div class="pay-row">' +
-            '<div class="field"><label>' + t("pay.expiry") + '</label><input class="input" id="p-exp" placeholder="MM/YY" value="' + SSX.helpers.esc(state.cardExp) + '"></div>' +
+            '<div class="field"><label>' + t("pay.expiry") + '</label><input class="input" id="p-exp" placeholder="MM / YY" value="' + SSX.helpers.esc(state.cardExp) + '"></div>' +
             '<div class="field"><label>CVC</label><input class="input" id="p-cvc" inputmode="numeric" placeholder="123" value="' + SSX.helpers.esc(state.cardCvc) + '"></div>' +
           '</div>' +
         '</div>' +
-        '<p class="tiny muted" style="margin-top:6px;">' + SSX.icon("lock") + ' ' + t("booking.simulated") + '</p>' +
+        '<div class="pay-note">' +
+          '<button type="button" class="btn btn-light btn-sm" id="p-test">' + SSX.icon("sparkles", 13) + " " + t("pay.testCard") + '</button>' +
+          '<p class="tiny muted">' + SSX.icon("lock", 13) + " " + t("booking.simulated") + '</p>' +
+        '</div>' +
       '</div>' +
       '<input type="text" name="company_website" id="b-hp" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">';
 
@@ -362,10 +365,56 @@
     var pnum = c.querySelector("#p-num");
     var pexp = c.querySelector("#p-exp");
     var pcvc = c.querySelector("#p-cvc");
-    pname.addEventListener("input", function () { state.cardName = pname.value; });
-    pnum.addEventListener("input", function () { state.cardNumber = pnum.value; });
-    pexp.addEventListener("input", function () { state.cardExp = pexp.value; });
-    pcvc.addEventListener("input", function () { state.cardCvc = pcvc.value; });
+
+    function luhn(digits) {
+      var sum = 0, dbl = false;
+      for (var i = digits.length - 1; i >= 0; i--) {
+        var d = Number(digits[i]);
+        if (dbl) { d *= 2; if (d > 9) d -= 9; }
+        sum += d; dbl = !dbl;
+      }
+      return sum % 10 === 0;
+    }
+    function expiryOk(v) {
+      if (!/^\d{4}$/.test(v)) return false;
+      var m = Number(v.slice(0, 2)), y = 2000 + Number(v.slice(2));
+      if (!m || m > 12) return false;
+      var now = new Date();
+      return y > now.getFullYear() || (y === now.getFullYear() && m >= now.getMonth() + 1);
+    }
+    function liveErr(input, ok) {
+      input.classList.toggle("is-valid", ok);
+      input.classList.toggle("is-invalid", !ok && input.value !== "");
+    }
+
+    pname.addEventListener("input", function () { state.cardName = pname.value; liveErr(pname, state.cardName.trim().length >= 3); });
+    pnum.addEventListener("input", function () {
+      var v = pnum.value.replace(/\D/g, "").slice(0, 19);
+      state.cardNumber = v.replace(/(\d{4})(?=\d)/g, "$1 ");
+      pnum.value = state.cardNumber;
+      liveErr(pnum, v.length >= 12 && luhn(v));
+    });
+    pexp.addEventListener("input", function () {
+      var v = pexp.value.replace(/\D/g, "").slice(0, 4);
+      state.cardExp = v.length > 2 ? v.slice(0, 2) + " / " + v.slice(2) : v;
+      pexp.value = state.cardExp;
+      liveErr(pexp, expiryOk(v));
+    });
+    pcvc.addEventListener("input", function () {
+      var v = pcvc.value.replace(/\D/g, "").slice(0, 4);
+      state.cardCvc = v;
+      pcvc.value = v;
+      liveErr(pcvc, v.length >= 3);
+    });
+
+    var testBtn = c.querySelector("#p-test");
+    if (testBtn) testBtn.onclick = function () {
+      if (pname.value !== "Anna Example") { pname.value = "Anna Example"; state.cardName = pname.value; liveErr(pname, true); }
+      pnum.value = "4242 4242 4242 4242"; state.cardNumber = pnum.value; liveErr(pnum, true);
+      pexp.value = "12 / 30"; state.cardExp = pexp.value; liveErr(pexp, true);
+      pcvc.value = "123"; state.cardCvc = pcvc.value; liveErr(pcvc, true);
+      SSX.toast(t("pay.testCard") + " ✓", "success");
+    };
 
     toggle(state.mode || "video");
   }
@@ -388,6 +437,7 @@
     if (state.date) line(t("booking.dateLabel"), SSX.helpers.dateLabel(state.date));
     if (state.time) line(t("booking.timeLabel"), state.time + " · " + durationFor(state.duration).label);
     if (state.mode) line(t("booking.modeLabel"), state.mode === "video" ? t("common.video") : t("common.inPerson"));
+    if (state.method) line(t("booking.methodLabel"), state.method === "card" ? t("pay.card") : state.method === "twint" ? "TWINT" : t("pay.invoice"));
     var c = calc();
     line(t("interpreting.rate") + " · " + durationFor(state.duration).label, money(c.durPrice));
     if (c.surcharge) line(t("summary.cantonFee") + " (" + state.canton + ")", money(c.surcharge));

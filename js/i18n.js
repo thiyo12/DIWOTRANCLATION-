@@ -226,6 +226,8 @@ window.SSX = window.SSX || {};
     "pay.card": { en: "Debit / credit card", de: "Bankkarte / Kreditkarte", ta: "டெபிட் / கிரெடிட்" },
     "pay.cardBody": { en: "Visa · Mastercard — 3-D Secure.", de: "Visa · Mastercard — 3-D Secure.", ta: "விசா · மாஸ்டர்கார்டு" },
     "pay.twintBody": { en: "Pay by QR code from your phone in seconds.", de: "Zahlen per QR-Code in Sekunden.", ta: "QR குறியீடு மூலம்" },
+    "pay.testCard": { en: "Fill test card", de: "Testkarte ausfüllen", ta: "சோதனை அட்டை நிரப்பு" },
+    "booking.methodLabel": { en: "Payment method", de: "Zahlungsart", ta: "கட்டண முறை" },
     "pay.invoice": { en: "Invoice / bank transfer", de: "Rechnung / Banküberweisung", ta: "விலைப்பட்டியல்" },
     "pay.invoiceBody": { en: "Pay by invoice within 10 days.", de: "Zahlung per Rechnung innerhalb 10 Tagen.", ta: "10 நாட்களில்" },
     "pay.cardName": { en: "Name on card", de: "Name auf der Karte", ta: "அட்டை பெயர்" },
