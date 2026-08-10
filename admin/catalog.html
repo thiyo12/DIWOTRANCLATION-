@@ -47,8 +47,10 @@
           '<div class="field"><label>Support phone</label><input class="input" id="s-phone" value=""></div>' +
           '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>WhatsApp</label><input class="input" id="s-wa" placeholder="+41 79 000 00 00" value=""></div>' +
           '<div class="field"><label>Instagram URL</label><input class="input" id="s-ig" placeholder="https://instagram.com/…" value=""></div></div>' +
-          '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Facebook URL</label><input class="input" id="s-fb" placeholder="https://facebook.com/…" value=""></div>' +
-          '<div class="field"><label>LinkedIn URL</label><input class="input" id="s-li" placeholder="https://linkedin.com/…" value=""></div></div>' +
+'<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Facebook URL</label><input class="input" id="s-fb" placeholder="https://facebook.com/…" value=""></div>' +
+           '<div class="field"><label>LinkedIn URL</label><input class="input" id="s-li" placeholder="https://linkedin.com/…" value=""></div></div>' +
+           '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>TikTok URL</label><input class="input" id="s-tt" placeholder="https://tiktok.com/@…" value=""></div>' +
+           '<div class="field"><label></label><span></span></div></div>' +
           '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Hero image URL (photo replaces the illustration)</label><input class="input" id="s-hero" placeholder="https://…/photo.jpg" value=""></div>' +
           '<div class="field"><label>Flag animation</label><select class="input" id="s-flag">' +
             '<option value="drift">Drifting</option><option value="wave">Waving</option><option value="still">Still</option></select></div></div>' +
@@ -230,6 +232,7 @@
       document.getElementById("s-ig").value = CAT.settings.instagram || "";
       document.getElementById("s-fb").value = CAT.settings.facebook || "";
       document.getElementById("s-li").value = CAT.settings.linkedin || "";
+      document.getElementById("s-tt").value = CAT.settings.tiktok || "";
       document.getElementById("s-hero").value = CAT.settings.hero_image_url || "";
       document.getElementById("s-flag").value = CAT.settings.flag_style || "drift";
     }
@@ -249,6 +252,7 @@
         instagram: document.getElementById("s-ig").value,
         facebook: document.getElementById("s-fb").value,
         linkedin: document.getElementById("s-li").value,
+        tiktok: document.getElementById("s-tt").value,
         hero_image_url: document.getElementById("s-hero").value,
         flag_style: document.getElementById("s-flag").value
       };

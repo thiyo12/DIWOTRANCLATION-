@@ -51,6 +51,7 @@ SSX.settings = {
   instagram: "",
   facebook: "",
   linkedin: "",
+  tiktok: "",
   flagStyle: "drift",
   heroImage: "",
   cantonSurcharge: 0,
@@ -69,7 +70,7 @@ SSX.applySettings = function (s) {
     doc_cert_word: "docCertWord", doc_urgent_pct: "docUrgentPct", video_price: "videoPrice"
   };
   Object.keys(map).forEach(function (k) { if (s[k] !== undefined && s[k] !== null) SSX.settings[map[k]] = s[k]; });
-  ["whatsapp", "instagram", "facebook", "linkedin", "currency"].forEach(function (k) {
+  ["whatsapp", "instagram", "facebook", "linkedin", "tiktok", "currency"].forEach(function (k) {
     if (s[k] !== undefined && s[k] !== null) SSX.settings[k] = s[k];
   });
 };
@@ -198,6 +199,7 @@ SSX.socialLinks = function () {
   var items = [
     ["whatsapp", SSX.settings.whatsapp],
     ["instagram", SSX.settings.instagram],
+    ["tiktok", SSX.settings.tiktok],
     ["facebook", SSX.settings.facebook],
     ["linkedin", SSX.settings.linkedin]
   ];
@@ -222,21 +224,28 @@ SSX.shellFooter = function () {
       "</div>" +
       '<div class="footer-col" data-i18n-wrap>' +
         "<h4>" + SSX.t("nav.services") + "</h4><ul>" +
-          '<li><a href="services.html" data-i18n="nav.services"></a></li>' +
-          '<li><a href="translation.html" data-i18n="nav.translation"></a></li>' +
-          '<li><a href="fillform.html" data-i18n="nav.fillForm"></a></li>' +
           '<li><a href="booking.html" data-i18n="nav.booking"></a></li>' +
+          '<li><a href="booking.html">' + SSX.t("svc.videoTitle") + "</a></li>" +
+          '<li><a href="fillform.html">' + SSX.t("svc.docTitle") + "</a></li>" +
+          '<li><a href="translation.html" data-i18n="nav.translation"></a></li>' +
+          '<li><a href="concierge.html" data-i18n="nav.concierge"></a></li>' +
         "</ul></div>" +
-      '<div class="footer-col"><h4>' + SSX.t("nav.concierge") + '</h4><ul>' +
-        '<li><a href="concierge.html" data-i18n="nav.concierge"></a></li>' +
-        "</ul></div>" +
+      '<div class="footer-col"><h4>' + SSX.t("footer.quickLinks") + '</h4><ul>' +
+        '<li><a href="index.html" data-i18n="nav.home"></a></li>' +
+        '<li><a href="services.html" data-i18n="nav.services"></a></li>' +
+        '<li><a href="translation.html" data-i18n="nav.translation"></a></li>' +
+        '<li><a href="booking.html" data-i18n="nav.bookNow"></a></li>' +
+        '<li><a href="fillform.html" data-i18n="nav.fillForm"></a></li>' +
+      "</ul></div>" +
       '<div class="footer-col"><h4>' + SSX.t("nav.contact") + '</h4><ul>' +
         '<li><a href="mailto:' + SSX.settings.supportEmail + '">' + SSX.settings.supportEmail + "</a></li>" +
         '<li><a href="tel:' + SSX.settings.supportPhone.replace(/\s/g, "") + '">' + SSX.settings.supportPhone + "</a></li>" +
+        '<li>' + (SSX.settings.whatsapp ? '<a href="' + SSX.helpers.esc(SSX.settings.whatsapp) + '" target="_blank" rel="noopener">WhatsApp</a>' : "") + "</li>" +
+        '<li class="footer-addr">' + SSX.icon("map-pin", 13) + " " + SSX.t("footer.addr") + "</li>" +
       "</ul></div>" +
     "</div>" +
     '<div class="container footer-bottom"><span>© <span class="year"></span> ' + SSX.settings.brandName + ", Zürich, Switzerland. <span data-i18n=\"footer.rights\"></span></span>" +
-    '<span class="footer-pay">' + SSX.icon("lock") + " Secure payment · Visa · Mastercard · TWINT · Invoice</span>" +
+    '<span class="footer-pay">' + SSX.icon("lock", 13) + " Secure payment · Visa · Mastercard · TWINT · Invoice</span>" +
     "</div>"
   );
 };
@@ -296,6 +305,7 @@ SSX.renderShell = function () {
 
   SSX.renderFeatured();
   SSX.fillFees();
+  if (SSX.translateAll) SSX.translateAll();
 
   const burger = document.querySelector(".nav-burger");
   const nav = document.querySelector(".main-nav");

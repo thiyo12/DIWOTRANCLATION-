@@ -752,7 +752,7 @@ app.delete("/admin/api/doc-types/:id", requireAdmin, (req, res) => {
 app.patch("/admin/api/settings", requireAdmin, (req, res) => {
   const b = req.body || {};
   Object.keys(b).forEach((k) => {
-    if (["brand_name", "support_email", "support_phone", "whatsapp", "instagram", "facebook", "linkedin",
+    if (["brand_name", "support_email", "support_phone", "whatsapp", "instagram", "facebook", "linkedin", "tiktok",
          "hero_image_url", "flag_style", "travel_fee", "currency", "ref_prefix", "smtp_host", "smtp_port",
          "smtp_user", "smtp_pass", "smtp_from", "smtp_secure", "lockout_max", "lockout_minutes",
          "canton_surcharge", "doc_plain_word", "doc_cert_word", "doc_urgent_pct", "video_price"].includes(k)) {

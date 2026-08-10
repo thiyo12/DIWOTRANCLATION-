@@ -320,6 +320,8 @@ window.SSX = window.SSX || {};
     "footer.rights": { en: "All rights reserved.", de: "Alle Rechte vorbehalten.", ta: "அனைத்து உரிமையும்." },
     "footer.certTitle": { en: "Certified translators", de: "Zertifizierte Übersetzer", ta: "சான்றளிக்கப்பட்ட மொழிபெயர்ப்பாளர்கள்" },
     "footer.certSub": { en: "Approved for official & notarised documents", de: "Zugelassen für offizielle & notarielle Dokumente", ta: "அதிகாரப்பூர்வ & நோட்டரி ஆவணங்களுக்கு அங்கீகரிக்கப்பட்டவை" },
+    "footer.quickLinks": { en: "Quick links", de: "Schnellzugriff", ta: "விரைவு இணைப்புகள்" },
+    "footer.addr": { en: "Zürich, Switzerland", de: "Zürich, Schweiz", ta: "சூரிக், சுவிட்சர்லாந்து" },
     "brand.tag": { en: "Certified Translators", de: "Zertifizierte Übersetzer", ta: "சான்றளிக்கப்பட்ட மொழிபெயர்ப்பாளர்கள்" },
 
     // ---------------- booking / misc pressures ----------------
