@@ -422,6 +422,15 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 600; line-height: 1.
 .pay-note p { display: flex; align-items: center; gap: 6px; margin: 0; }
 .pay-note .sv { width: 13px; height: 13px; flex: 0 0 auto; }
 .pay-note .btn { margin: 0; }
+.pay-panel h3.pay-title { display: flex; align-items: center; gap: 8px; font-family: var(--font-body); font-weight: 800; margin-bottom: 10px; }
+.pay-panel h3.pay-title .sv { width: 16px; height: 16px; }
+.pay-live { margin-top: 14px; }
+.pay-badge { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 999px; font-size: 0.85rem; font-weight: 800; }
+.pay-badge--wait { background: var(--gold-soft); color: #8a6410; border: 1px solid #e3cd94; }
+.pay-badge--ok { background: #e4f4ea; color: #1e6b3c; border: 1px solid #b9dfc8; }
+.pay-badge--bad { background: var(--red-soft); color: var(--swiss-red); border: 1px solid #ecd5d7; }
+.pay-note-line { display: flex; align-items: center; gap: 6px; margin-top: 12px; }
+.pay-note-line .sv { width: 13px; height: 13px; }
 
 .time-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
 .time-slot { border: 1.5px solid var(--line); background: #fff; border-radius: var(--radius-sm); padding: 11px 8px; font-weight: 600; font-size: 0.9rem; color: var(--ink); transition: all 0.15s ease; }

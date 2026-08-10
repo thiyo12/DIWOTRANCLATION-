@@ -26,6 +26,7 @@
       <p class="muted" id="sub-text" data-i18n="confirm.subtitle"></p>
       <div class="ref-pill" id="ref-pill">…</div>
       <div class="card detail-table" id="detail-table"></div>
+      <div class="card detail-table" id="pay-box" style="margin-top:18px;display:none;"></div>
       <div class="priority-note" style="margin-top:20px;text-align:left;">
         <span style="color:var(--champagne);">✦</span>
         <span id="mode-note"></span>
@@ -97,15 +98,85 @@
           row(SSX.t("booking.timeLabel"), (b.time || "—") + (b.duration ? " · " + b.duration + " min" : ""));
           row(SSX.t("booking.modeLabel"), b.mode === "on_site" ? SSX.t("common.inPerson") : SSX.t("common.video"));
           if (b.mode === "on_site" && b.address) row(SSX.t("field.address"), b.address);
-          row(SSX.t("booking.total"), SSX.helpers.fmt(b.total));
-          row(SSX.t("booking.payLabel"), String(b.method || "card").toUpperCase());
-          row(SSX.t("confirm.status"), b.status === "confirmed" ? SSX.t("confirm.statusConfirmed") : SSX.t("confirm.statusPending"));
+row(SSX.t("booking.total"), SSX.helpers.fmt(b.total));
+          row(SSX.t("booking.payLabel"), b.method === "twint" ? "TWINT" : SSX.t("pay.bank"));
+          var stRow = document.createElement("div");
+          stRow.className = "row";
+          stRow.innerHTML = '<span>' + SSX.t("confirm.status") + '</span><b>' + statusLabel(b) + '</b>';
+          table.appendChild(stRow);
           document.getElementById("mode-note").textContent = b.mode === "video"
             ? SSX.t("confirm.videoNote")
             : SSX.t("confirm.siteNote");
+          renderPayBox(b);
+          pollStatus(ref);
         }
       });
     });
+
+    function payState(b) {
+      return b.pay_status || (b.status === "paid" ? "paid" : b.status === "refunded" ? "refunded" : b.status === "cancelled" ? "cancelled" : "pending");
+    }
+    function statusLabel(b) {
+      var s = payState(b);
+      if (s === "paid") return '<span class="pay-badge pay-badge--ok">' + SSX.t("confirm.statusPaid") + '</span>';
+      if (s === "refunded") return '<span class="pay-badge pay-badge--bad">' + SSX.t("confirm.statusRefunded") + '</span>';
+      if (s === "cancelled") return '<span class="pay-badge pay-badge--bad">' + SSX.t("confirm.statusCancelled") + '</span>';
+      return '<span class="pay-badge pay-badge--wait">' + SSX.t("confirm.payWaiting") + '</span>';
+    }
+    function renderPayBox(b) {
+      var box = document.getElementById("pay-box");
+      var pay = payState(b);
+      if (pay === "cancelled" || pay === "refunded") {
+        box.style.display = "";
+        box.innerHTML = '<div class="pay-panel" data-st="' + pay + '"><h3 class="pay-title">' + statusLabel(b) + '</h3><p class="muted">' + SSX.t("confirm.statusRefunded") + '.</p></div>';
+        return;
+      }
+      box.style.display = "";
+      var html =
+        '<div class="pay-panel" data-st="' + pay + '">' +
+          '<h3 class="pay-title">' + SSX.icon(pay === "paid" ? "check" : "lock", 16) + " " + (pay === "paid" ? SSX.t("confirm.statusPaid") : SSX.t("confirm.payTitle")) + '</h3>';
+      if (pay === "paid") {
+        html += '<p class="muted">' + SSX.t("pay.received") + '</p>';
+        html += '<div class="pay-live">' + statusLabel(b) + '</div>';
+        html += "</div>";
+        box.innerHTML = html;
+        return;
+      }
+      var twint = SSX.settings.payTwintRef || "";
+      var iban = SSX.settings.payIban || "";
+      var payBank = SSX.settings.payBankName || "";
+      if (!twint && !iban && !payBank) {
+        setTimeout(function () { renderPayBox(b); }, 500);
+      }
+      if (b.method === "twint") {
+        html += '<div class="row"><span>' + SSX.t("confirm.payTo") + '</span><b>TWINT · ' + SSX.helpers.esc(twint) + "</b></div>";
+      } else {
+        html += '<div class="row"><span>' + SSX.t("confirm.payIban") + '</span><b>' + SSX.helpers.esc(iban) + "</b></div>";
+        html += '<div class="row"><span>' + SSX.t("confirm.payBenef") + '</span><b>' + SSX.helpers.esc(payBank || "Ssaaxcy Solutions GmbH") + "</b></div>";
+      }
+      html += '<div class="row"><span>' + SSX.t("booking.total") + '</span><b>' + SSX.helpers.fmt(b.total) + "</b></div>";
+      html += '<div class="row"><span>' + SSX.t("confirm.payUseRef") + '</span><b class="ref-copy">' + SSX.helpers.esc(b.ref || ref) + "</b></div>";
+      html += '<p class="tiny muted pay-note-line">' + SSX.icon("lock", 13) + " " + SSX.t("booking.payRef") + '</p>';
+      html += "<div class=\"pay-live\">" + statusLabel(b) + "</div>";
+      html += "</div>";
+      box.innerHTML = html;
+    }
+
+    function pollStatus(ref) {
+      if (!SSX.http) return;
+      var timer = setInterval(function () {
+        SSX.request("GET", "/api/bookings/" + encodeURIComponent(ref))
+          .then(function (res) {
+            var b = res.booking;
+            if (!b) { clearInterval(timer); return; }
+            var pay = payState(b);
+            var box = document.getElementById("pay-box");
+            if (pay === "refunded" || pay === "cancelled") clearInterval(timer);
+            renderPayBox(b);
+          })
+          .catch(function () {});
+      }, 4000);
+    }
   </script>
 </body>
 </html>

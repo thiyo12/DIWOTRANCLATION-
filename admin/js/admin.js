@@ -105,6 +105,7 @@ SS.icon = function (name, size) {
     logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     check: '<path d="M20 6 9 17l-5-5"/>',
+    'arrow-back': '<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>',
     wallet: '<path d="M3 7a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M16 12.5h.01"/><path d="M3 9h18"/>',
     bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
     video: '<path d="m16 10 5-3v10l-5-3V10Z"/><rect x="2.5" y="6" width="13.5" height="12" rx="2.5"/>',

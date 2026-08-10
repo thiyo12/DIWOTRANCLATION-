@@ -84,7 +84,7 @@ const writeRateLimit = rateLimit({
 // --------------------------------------------------------------------------
 const now = () => new Date().toISOString().slice(0, 19).replace("T", " ");
 const LANG_CODES = ["DE", "EN", "TA"];
-const PAY_METHODS = ["card", "twint", "invoice"];
+const PAY_METHODS = ["twint", "bank"];
 const MODES = ["video", "on_site"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -548,14 +548,16 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
       base, durationPrice, fee, total, method, "pending", canton.slice(0, 60)
     ]
   );
-  run("INSERT INTO payments (ref, method, amount, status) VALUES (?,?,?,?)", [ref, method, total, "paid"]);
-  sendMail(b.email, "Ssaaxcy Solutions — appointment request " + ref, confirmationHtml("We received your booking request", [
+  run("INSERT INTO payments (ref, method, amount, status) VALUES (?,?,?,?)", [ref, method, total, "unpaid"]);
+  sendMail(b.email, "Ssaaxcy Solutions — appointment request " + ref, confirmationHtml("We received your appointment request — payment pending", [
     ["Reference", ref],
     ["Service", service.name],
     ["Language", lang.name],
     ["When", b.date + " at " + b.time],
     ["Mode", b.mode === "on_site" ? "On-site" : "Video"],
-    ["Total", "CHF " + total.toFixed(2)]
+    ["Total", "CHF " + total.toFixed(2)],
+    ["How to pay", method === "twint" ? ("TWINT to " + loadSetting("pay_twint_ref", "")) : ("Bank transfer to " + loadSetting("pay_iban", ""))],
+    ["Payment reference", "Use " + ref + " as your payment reference"]
   ]));
   res.json({
     ok: true, ref, language: lang.name, service: service.name, date: b.date, time: b.time,
@@ -567,7 +569,8 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
 app.get("/api/bookings/:ref", (req, res) => {
   const b = one("SELECT * FROM bookings WHERE ref = ?", [req.params.ref]);
   if (!b) return res.status(404).json({ ok: false, error: "Booking not found." });
-  res.json({ ok: true, booking: b });
+  const p = one("SELECT status pay_status FROM payments WHERE ref = ? ORDER BY id DESC LIMIT 1", [req.params.ref]);
+  res.json({ ok: true, booking: Object.assign({}, b, { pay_status: p ? p.pay_status : (b.status === "paid" ? "paid" : "unpaid") }) });
 });
 
 app.post("/api/concierge", writeRateLimit, (req, res) => {
@@ -628,6 +631,13 @@ app.patch("/admin/api/bookings/:id", requireAdmin, (req, res) => {
   if (!set.length) return res.status(400).json({ ok: false, error: "Nothing to update." });
   params.push(req.params.id);
   run("UPDATE bookings SET " + set.join(", ") + " WHERE id = ?", params);
+  const booking = one("SELECT * FROM bookings WHERE id = ?", [req.params.id]);
+  if (booking && b.status) {
+    const st = String(b.status);
+    if (["paid", "refunded", "cancelled", "pending"].includes(st)) {
+      run("UPDATE payments SET status = ? WHERE ref = ?", [st, booking.ref]);
+    }
+  }
   res.json({ ok: true });
 });
 
@@ -755,7 +765,8 @@ app.patch("/admin/api/settings", requireAdmin, (req, res) => {
     if (["brand_name", "support_email", "support_phone", "whatsapp", "instagram", "facebook", "linkedin", "tiktok",
          "hero_image_url", "flag_style", "travel_fee", "currency", "ref_prefix", "smtp_host", "smtp_port",
          "smtp_user", "smtp_pass", "smtp_from", "smtp_secure", "lockout_max", "lockout_minutes",
-         "canton_surcharge", "doc_plain_word", "doc_cert_word", "doc_urgent_pct", "video_price"].includes(k)) {
+         "canton_surcharge", "doc_plain_word", "doc_cert_word", "doc_urgent_pct", "video_price",
+         "pay_twint_ref", "pay_iban", "pay_bank_name"].includes(k)) {
       run("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", [k, String(b[k]).slice(0, 400)]);
     }
   });

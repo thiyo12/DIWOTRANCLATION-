@@ -24,7 +24,7 @@
         var c = document.getElementById("content");
         c.innerHTML =
           '<div class="toolbar">' +
-          '<select id="f-status"><option value="">All statuses</option><option>pending</option><option>confirmed</option><option>completed</option><option>cancelled</option></select>' +
+          '<select id="f-status"><option value="">All statuses</option><option>pending</option><option>paid</option><option>refunded</option><option>cancelled</option><option>confirmed</option><option>completed</option></select>' +
           '<select id="f-mode"><option value="">All modes</option><option value="video">Video</option><option value="on_site">On-site</option></select>' +
           '<input type="search" id="f-q" placeholder="Search ref, name, email…">' +
           '<button class="btn btn-dark btn-sm" id="btn-refresh">↻ Refresh</button>' +
@@ -98,10 +98,14 @@
         '<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px;">' +
         '<div class="flex mb"><label class="small" style="font-weight:800;min-width:70px;">Status</label>' +
         '<select id="mv-status" class="input" style="flex:1;">' +
-          ["pending", "confirmed", "completed", "cancelled"].map(function (s) { return '<option' + (b.status === s ? " selected" : "") + '>' + s + '</option>'; }).join("") +
+          ["pending", "paid", "refunded", "cancelled", "confirmed", "completed"].map(function (s) { return '<option' + (b.status === s ? " selected" : "") + '>' + s + '</option>'; }).join("") +
         '</select>' +
         '<button class="btn btn-dark btn-sm" id="mv-save">Save</button>' +
         '<button class="btn btn-light btn-sm danger" id="mv-del">Delete</button></div>' +
+        '<div class="flex mb" style="margin-top:10px;">' +
+        '<button class="btn btn-primary btn-sm" id="mv-pay">' + SS.icon("check", 14) + " Mark as paid</button>" +
+        '<button class="btn btn-light btn-sm danger" id="mv-refund">' + SS.icon("arrow-back", 14) + " Refund / reverse</button>" +
+        "</div>" +
         '</div>' +
         '<button class="btn btn-light btn-sm" id="mv-edit" style="margin-top:4px;">' + SS.icon("edit", 14) + " Edit details</button>' +
         '<div id="edit-box" class="hidden mt"></div>';
@@ -116,6 +120,20 @@
       m.querySelector("#mv-del").onclick = function () {
         SS.confirm("Delete booking " + b.ref + "? This cannot be undone.", function () {
           SS.del("/admin/api/bookings/" + id).then(function () { m.remove(); load(); SS.toast("Booking deleted.", "success"); });
+        });
+      };
+      m.querySelector("#mv-pay").onclick = function () {
+        SS.confirm("Mark " + b.ref + " as paid (payment " + SS.fmt(b.total) + " received)?", function () {
+          SS.patch("/admin/api/bookings/" + id, { status: "paid" }).then(function () {
+            m.remove(); load(); SS.toast("Marked paid — booking confirmed.", "success");
+          }).catch(function (e) { SS.toast(e.message, "error"); });
+        });
+      };
+      m.querySelector("#mv-refund").onclick = function () {
+        SS.confirm("Refund / reverse " + b.ref + " back to the customer? Booking will be cancelled.", function () {
+          SS.patch("/admin/api/bookings/" + id, { status: "refunded" }).then(function () {
+            m.remove(); load(); SS.toast("Refunded / reversed.", "success");
+          }).catch(function (e) { SS.toast(e.message, "error"); });
         });
       };
       m.querySelector("#mv-edit").onclick = function () {

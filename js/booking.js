@@ -15,11 +15,7 @@
     email: "",
     phone: "",
     notes: "",
-    method: "card",
-    cardName: "",
-    cardNumber: "",
-    cardExp: "",
-    cardCvc: "",
+    method: "twint",
     submitting: false
   };
 
@@ -294,20 +290,10 @@
       '</div>' +
       '<div class="field"><label>' + t("booking.note") + '</label><textarea class="textarea" id="b-notes" placeholder="' + t("booking.notePh") + '">' + SSX.helpers.esc(state.notes) + '</textarea></div>' +
       '<div class="field"><label>' + t("booking.payLabel") + '</label>' +
-        '<div class="pay-card" data-m="card"><span class="pay-radio"></span><div><h4>' + t("pay.card") + '</h4><p>' + t("pay.cardBody") + '</p></div></div>' +
         '<div class="pay-card" data-m="twint"><span class="pay-radio"></span><div><h4>TWINT</h4><p>' + t("pay.twintBody") + '</p></div></div>' +
-        '<div class="pay-card" data-m="invoice"><span class="pay-radio"></span><div><h4>' + t("pay.invoice") + '</h4><p>' + t("pay.invoiceBody") + '</p></div></div>' +
-        '<div id="card-fields" style="margin-top:8px;">' +
-          '<div class="field"><label>' + t("pay.cardName") + '</label><input class="input" id="p-name" placeholder="' + t("pay.cardName") + '" value="' + SSX.helpers.esc(state.cardName) + '"></div>' +
-          '<div class="field"><label>' + t("pay.cardNumber") + '</label><input class="input" id="p-num" inputmode="numeric" placeholder="4242 4242 4242 4242" value="' + SSX.helpers.esc(state.cardNumber) + '"></div>' +
-          '<div class="pay-row">' +
-            '<div class="field"><label>' + t("pay.expiry") + '</label><input class="input" id="p-exp" placeholder="MM / YY" value="' + SSX.helpers.esc(state.cardExp) + '"></div>' +
-            '<div class="field"><label>CVC</label><input class="input" id="p-cvc" inputmode="numeric" placeholder="123" value="' + SSX.helpers.esc(state.cardCvc) + '"></div>' +
-          '</div>' +
-        '</div>' +
+        '<div class="pay-card" data-m="bank"><span class="pay-radio"></span><div><h4>' + t("pay.bank") + '</h4><p>' + t("pay.bankBody") + '</p></div></div>' +
         '<div class="pay-note">' +
-          '<button type="button" class="btn btn-light btn-sm" id="p-test">' + SSX.icon("sparkles", 13) + " " + t("pay.testCard") + '</button>' +
-          '<p class="tiny muted">' + SSX.icon("lock", 13) + " " + t("booking.simulated") + '</p>' +
+          '<p class="tiny muted">' + SSX.icon("lock", 13) + " " + t("booking.payRef") + '</p>' +
         '</div>' +
       '</div>' +
       '<input type="text" name="company_website" id="b-hp" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">';
@@ -355,66 +341,9 @@
         state.method = cardEl.getAttribute("data-m");
         c.querySelectorAll(".pay-card").forEach(function (x) { x.classList.remove("selected"); });
         cardEl.classList.add("selected");
-        c.querySelector("#card-fields").style.display = state.method === "card" ? "" : "none";
         renderSummary();
       };
     });
-    c.querySelector("#card-fields").style.display = state.method === "card" ? "" : "none";
-
-    var pname = c.querySelector("#p-name");
-    var pnum = c.querySelector("#p-num");
-    var pexp = c.querySelector("#p-exp");
-    var pcvc = c.querySelector("#p-cvc");
-
-    function luhn(digits) {
-      var sum = 0, dbl = false;
-      for (var i = digits.length - 1; i >= 0; i--) {
-        var d = Number(digits[i]);
-        if (dbl) { d *= 2; if (d > 9) d -= 9; }
-        sum += d; dbl = !dbl;
-      }
-      return sum % 10 === 0;
-    }
-    function expiryOk(v) {
-      if (!/^\d{4}$/.test(v)) return false;
-      var m = Number(v.slice(0, 2)), y = 2000 + Number(v.slice(2));
-      if (!m || m > 12) return false;
-      var now = new Date();
-      return y > now.getFullYear() || (y === now.getFullYear() && m >= now.getMonth() + 1);
-    }
-    function liveErr(input, ok) {
-      input.classList.toggle("is-valid", ok);
-      input.classList.toggle("is-invalid", !ok && input.value !== "");
-    }
-
-    pname.addEventListener("input", function () { state.cardName = pname.value; liveErr(pname, state.cardName.trim().length >= 3); });
-    pnum.addEventListener("input", function () {
-      var v = pnum.value.replace(/\D/g, "").slice(0, 19);
-      state.cardNumber = v.replace(/(\d{4})(?=\d)/g, "$1 ");
-      pnum.value = state.cardNumber;
-      liveErr(pnum, v.length >= 12 && luhn(v));
-    });
-    pexp.addEventListener("input", function () {
-      var v = pexp.value.replace(/\D/g, "").slice(0, 4);
-      state.cardExp = v.length > 2 ? v.slice(0, 2) + " / " + v.slice(2) : v;
-      pexp.value = state.cardExp;
-      liveErr(pexp, expiryOk(v));
-    });
-    pcvc.addEventListener("input", function () {
-      var v = pcvc.value.replace(/\D/g, "").slice(0, 4);
-      state.cardCvc = v;
-      pcvc.value = v;
-      liveErr(pcvc, v.length >= 3);
-    });
-
-    var testBtn = c.querySelector("#p-test");
-    if (testBtn) testBtn.onclick = function () {
-      if (pname.value !== "Anna Example") { pname.value = "Anna Example"; state.cardName = pname.value; liveErr(pname, true); }
-      pnum.value = "4242 4242 4242 4242"; state.cardNumber = pnum.value; liveErr(pnum, true);
-      pexp.value = "12 / 30"; state.cardExp = pexp.value; liveErr(pexp, true);
-      pcvc.value = "123"; state.cardCvc = pcvc.value; liveErr(pcvc, true);
-      SSX.toast(t("pay.testCard") + " ✓", "success");
-    };
 
     toggle(state.mode || "video");
   }
@@ -437,7 +366,7 @@
     if (state.date) line(t("booking.dateLabel"), SSX.helpers.dateLabel(state.date));
     if (state.time) line(t("booking.timeLabel"), state.time + " · " + durationFor(state.duration).label);
     if (state.mode) line(t("booking.modeLabel"), state.mode === "video" ? t("common.video") : t("common.inPerson"));
-    if (state.method) line(t("booking.methodLabel"), state.method === "card" ? t("pay.card") : state.method === "twint" ? "TWINT" : t("pay.invoice"));
+    if (state.method) line(t("booking.methodLabel"), state.method === "twint" ? "TWINT" : t("pay.bank"));
     var c = calc();
     line(t("interpreting.rate") + " · " + durationFor(state.duration).label, money(c.durPrice));
     if (c.surcharge) line(t("summary.cantonFee") + " (" + state.canton + ")", money(c.surcharge));
@@ -460,12 +389,6 @@
       else if (state.mode === "on_site" && !state.address.trim()) msg = t("err.address");
       if (!msg && !state.customer.trim()) msg = t("err.name");
       if (!msg && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(state.email)) msg = t("err.email");
-      if (!msg && state.method === "card") {
-        if (!state.cardName.trim()) msg = t("err.cardName");
-        else if (state.cardNumber.replace(/\s/g, "").length < 12) msg = t("err.cardNumber");
-        else if (!/^\d{2}\s?\/\s?\d{2}$/.test(state.cardExp)) msg = t("err.cardExp");
-        else if (state.cardCvc.length < 3) msg = t("err.cvc");
-      }
     }
     if (msg) {
       SSX.toast(msg, "error");

@@ -50,7 +50,9 @@
 '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Facebook URL</label><input class="input" id="s-fb" placeholder="https://facebook.com/…" value=""></div>' +
            '<div class="field"><label>LinkedIn URL</label><input class="input" id="s-li" placeholder="https://linkedin.com/…" value=""></div></div>' +
            '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>TikTok URL</label><input class="input" id="s-tt" placeholder="https://tiktok.com/@…" value=""></div>' +
-           '<div class="field"><label></label><span></span></div></div>' +
+           '<div class="field"><label>TWINT pay number (customers pay to this)</label><input class="input" id="s-twint" placeholder="+41 79 000 00 00" value=""></div></div>' +
+           '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Bank name (beneficiary)</label><input class="input" id="s-bank" placeholder="Ssaaxcy Solutions GmbH" value=""></div>' +
+           '<div class="field"><label>IBAN for bank transfer</label><input class="input" id="s-iban" placeholder="CH00 0000 0000 0000 0000 0" value=""></div></div>' +
           '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Hero image URL (photo replaces the illustration)</label><input class="input" id="s-hero" placeholder="https://…/photo.jpg" value=""></div>' +
           '<div class="field"><label>Flag animation</label><select class="input" id="s-flag">' +
             '<option value="drift">Drifting</option><option value="wave">Waving</option><option value="still">Still</option></select></div></div>' +
@@ -233,6 +235,9 @@
       document.getElementById("s-fb").value = CAT.settings.facebook || "";
       document.getElementById("s-li").value = CAT.settings.linkedin || "";
       document.getElementById("s-tt").value = CAT.settings.tiktok || "";
+      document.getElementById("s-twint").value = CAT.settings.pay_twint_ref || "";
+      document.getElementById("s-bank").value = CAT.settings.pay_bank_name || "";
+      document.getElementById("s-iban").value = CAT.settings.pay_iban || "";
       document.getElementById("s-hero").value = CAT.settings.hero_image_url || "";
       document.getElementById("s-flag").value = CAT.settings.flag_style || "drift";
     }
@@ -253,6 +258,9 @@
         facebook: document.getElementById("s-fb").value,
         linkedin: document.getElementById("s-li").value,
         tiktok: document.getElementById("s-tt").value,
+        pay_twint_ref: document.getElementById("s-twint").value,
+        pay_bank_name: document.getElementById("s-bank").value,
+        pay_iban: document.getElementById("s-iban").value,
         hero_image_url: document.getElementById("s-hero").value,
         flag_style: document.getElementById("s-flag").value
       };

@@ -55,6 +55,9 @@ SSX.settings = {
   flagStyle: "drift",
   heroImage: "",
   cantonSurcharge: 0,
+  payTwintRef: "",
+  payIban: "",
+  payBankName: "",
   docPlainWord: 0.15,
   docCertWord: 0.2,
   docUrgentPct: 50,
@@ -66,6 +69,7 @@ SSX.applySettings = function (s) {
   var map = {
     brand_name: "brandName", support_email: "supportEmail", support_phone: "supportPhone",
     travel_fee: "travelFee", hero_image_url: "heroImage", flag_style: "flagStyle",
+    pay_twint_ref: "payTwintRef", pay_iban: "payIban", pay_bank_name: "payBankName",
     canton_surcharge: "cantonSurcharge", doc_plain_word: "docPlainWord",
     doc_cert_word: "docCertWord", doc_urgent_pct: "docUrgentPct", video_price: "videoPrice"
   };
