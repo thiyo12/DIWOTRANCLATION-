@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Security — Ssaaxcy Admin</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="../assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <script src="js/admin.js"></script>
+  <script>
+    var EVENTS = [];
+    var BLOCKS = [];
+
+    document.addEventListener("DOMContentLoaded", function () {
+      SS.guard().then(function (ok) {
+        if (!ok) return;
+        SS.shell("security", "Security center", "Login attempts, blocks & threat log");
+        var c = document.getElementById("content");
+        c.innerHTML =
+          '<div class="stat-row">' +
+            '<div class="stat-card"><div class="label">' + SS.icon("lock", 15) + '&nbsp;Failed logins · 24h</div><div class="value" id="s-fails">…</div></div>' +
+            '<div class="stat-card"><div class="label">' + SS.icon("shield", 15) + '&nbsp;Active IP blocks</div><div class="value" id="s-blocks">…</div></div>' +
+            '<div class="stat-card"><div class="label">' + SS.icon("bell", 15) + '&nbsp;Security events logged</div><div class="value" id="s-events">…</div></div>' +
+          '</div>' +
+          '<div class="card" style="margin-top:18px;"><h3 class="card-title">' + SS.icon("shield", 16) + ' Blocked IPs</h3>' +
+            '<div class="table-wrap"><table class="tbl" id="tbl-blocks"></table></div></div>' +
+          '<div class="card" style="margin-top:18px;"><h3 class="card-title">' + SS.icon("bell", 16) + ' Security events</h3>' +
+            '<div class="table-wrap"><table class="tbl" id="tbl-events"></table></div></div>' +
+          '<div class="card" style="margin-top:18px;"><h3 class="card-title">' + SS.icon("lock", 16) + ' Manual block</h3>' +
+            '<div class="flex" style="gap:10px;max-width:520px;">' +
+            '<input class="input" id="new-ip" placeholder="IP address to block (60 min)">' +
+            '<button class="btn btn-red btn-sm" id="btn-block">Block IP</button></div></div>';
+
+        document.getElementById("btn-block").addEventListener("click", function () {
+          var ip = document.getElementById("new-ip").value.trim();
+          if (!ip) return;
+          SS.post("/admin/api/security/block", { ip: ip }).then(function () {
+            document.getElementById("new-ip").value = "";
+            load(); SS.toast("IP blocked.", "success");
+          }).catch(function (e) { SS.toast(e.message, "error"); });
+        });
+
+        load();
+      });
+    });
+
+    function load() {
+      SS.get("/admin/api/security").then(function (d) {
+        EVENTS = d.events || [];
+        BLOCKS = d.blocks || [];
+        document.getElementById("s-fails").textContent = (d.fails24h && d.fails24h.c) || 0;
+        document.getElementById("s-blocks").textContent = BLOCKS.length;
+        document.getElementById("s-events").textContent = EVENTS.length;
+        render();
+      }).catch(function (e) { SS.toast(e.message, "error"); });
+    }
+
+    function render() {
+      var tb = document.getElementById("tbl-blocks");
+      if (!BLOCKS.length) { tb.innerHTML = '<tr><td class="empty">No IPs are currently blocked.</td></tr>'; }
+      else {
+        tb.innerHTML = "<thead><tr><th>IP</th><th>Reason</th><th>Until (UTC)</th><th></th></tr></thead>" +
+          BLOCKS.map(function (b) {
+            return "<tr><td class='ref'>" + SS.txt(b.ip) + "</td><td>" + SS.txt(b.reason || "—") + "</td><td>" + SS.txt(b.until || "—") + "</td>" +
+              "<td><button class='icon-btn' onclick='unblock(\"" + SS.esc(b.ip) + "\")'>" + SS.icon("check", 14) + " Unblock</button></td></tr>";
+          }).join("");
+      }
+
+      var te = document.getElementById("tbl-events");
+      if (!EVENTS.length) { te.innerHTML = '<tr><td class="empty">No security events recorded yet.</td></tr>'; return; }
+      te.innerHTML = "<thead><tr><th>Type</th><th>Detail</th><th>IP</th><th>When</th></tr></thead>" +
+        EVENTS.map(function (e) {
+          return "<tr><td><span class='badge pending'>" + SS.txt(e.type) + "</span></td><td>" + SS.txt(e.detail || "—") + "</td><td class='ref'>" + SS.txt(e.ip || "—") + "</td><td>" + SS.when(e.created_at) + "</td></tr>";
+        }).join("");
+    }
+
+    window.unblock = function (ip) {
+      SS.post("/admin/api/security/unblock", { ip: ip }).then(function () {
+        load(); SS.toast("IP unblocked.", "success");
+      }).catch(function (e) { SS.toast(e.message, "error"); });
+    };
+  </script>
+</body>
+</html>

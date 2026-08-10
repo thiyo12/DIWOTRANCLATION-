@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Ssaaxcy Admin</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="../assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <script src="js/admin.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      SS.guard().then(function (ok) {
+        if (!ok) return;
+        SS.shell("dashboard", "Dashboard", "Overview");
+        var content = document.getElementById("content");
+        content.innerHTML = '<div class="stat-row" id="stat-row"></div>' +
+          '<div class="grid-2">' +
+          '<div class="card card-pad"><h3>Upcoming appointments</h3><div class="table-wrap"><table class="tbl" id="t-up"></table></div></div>' +
+          '<div>' +
+          '<div class="card card-pad mb"><h3>Top services</h3><div id="top-services"></div></div>' +
+          '<div class="card card-pad"><h3>Top languages</h3><div id="top-languages"></div></div>' +
+          '</div>' +
+          '</div>';
+
+        SS.get("/admin/api/dashboard").then(function (d) {
+          var s = d.s;
+          var cards = [
+            { label: "Total bookings", value: s.bookings, icon: "calendar" },
+            { label: "Pending", value: s.pending, icon: "clock" },
+            { label: "Confirmed", value: s.confirmed, icon: "check" },
+            { label: "Revenue", value: SS.fmt(s.revenue), icon: "wallet" },
+            { label: "Concierge requests", value: s.concierge, icon: "bell" },
+            { label: "Active interpreters", value: s.interpreters, icon: "handshake" }
+          ];
+          document.getElementById("stat-row").innerHTML = cards.map(function (c) {
+            return '<div class="stat-card"><div class="label">' + SS.icon(c.icon, 15) + '&nbsp;' + c.label + '</div><div class="value">' + c.value + '</div></div>';
+          }).join("");
+
+          var up = d.upcoming || [];
+          var tup = document.getElementById("t-up");
+          if (!up.length) { tup.innerHTML = '<tr><td class="empty">No upcoming appointments</td></tr>'; }
+          else {
+            var head = "<thead><tr><th>Ref</th><th>Date</th><th>Time</th><th>Service</th><th>Language</th><th>Status</th><th></th></tr></thead>";
+            var rows = "<tbody>";
+            up.forEach(function (b) {
+              rows += "<tr><td class='ref'>" + SS.txt(b.ref) + "</td><td>" + SS.date(b.date) + "</td><td>" + SS.esc(b.time || "") + "</td><td>" + SS.txt(b.service_name) + "</td><td>" + SS.txt(b.language_name) + "</td><td>" + SS.badge(b.status) + '</td><td><a class="link" href="bookings.html?ref=' + encodeURIComponent(b.ref) + '">Open →</a></td></tr>';
+            });
+            tup.innerHTML = head + rows + "</tbody>";
+          }
+
+          function bars(id, data) {
+            var max = 1;
+            data.forEach(function (x) { if (x.c > max) max = x.c; });
+            document.getElementById(id).innerHTML = data.map(function (x) {
+              var w = Math.round(x.c / max * 100);
+              return '<div class="flex between" style="margin-bottom:8px;"><span class="small">' + SS.txt(x.service_name || x.language_name || "—") + '</span><div style="display:flex;align-items:center;gap:8px;flex:0 0 55%;"><div style="height:8px;border-radius:6px;background:linear-gradient(90deg,#b41f2b,#c9a15f);width:' + w + '%;"></div><span class="small muted">' + x.c + '</span></div></div>';
+            }).join("");
+          }
+          bars("top-services", d.topServices || []);
+          bars("top-languages", d.topLanguages || []);
+
+          var recent = "";
+          d.byWeek.slice().reverse().forEach(function (r) {
+            recent += r.d + ": " + r.c + " bookings · " + SS.fmt(r.total) + "\n";
+          });
+        });
+      });
+    });
+  </script>
+</body>
+</html>

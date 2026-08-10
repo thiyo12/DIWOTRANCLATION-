@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ssaaxcy Solutions — Services & Prices</title>
+  <meta name="description" content="Professional interpreting for every official appointment in Switzerland — doctor, hospital, police, immigration, Gemeinde, school, bank, insurance, job interviews and more.">
+  <link rel="icon" href="assets/brand/favicon.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="site-header" data-slot="header">
+    <div class="container header-inner"></div>
+  </header>
+
+  <section class="page-hero">
+    <div class="container">
+      <div class="breadcrumb"><a href="index.html" data-i18n="nav.home"></a> → <span data-i18n="nav.services"></span></div>
+      <h1 data-i18n="services.title"></h1>
+      <p data-i18n="services.subtitle"></p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="chip-row" id="filters" style="margin-bottom:30px;"></div>
+      <div class="service-grid" id="services-grid"></div>
+
+      <div class="section-head" style="margin-top:70px;">
+        <span class="eyebrow" data-i18n="svc.eyebrow"></span>
+        <h2 class="section-title" data-i18n="pricing.title"></h2>
+        <p class="section-intro" data-i18n="pricing.sub"></p>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="price-table">
+          <thead>
+            <tr><th data-i18n="pricing.hSituation"></th><th data-i18n="pricing.hHour"></th><th data-i18n="pricing.h30"></th><th data-i18n="pricing.h90"></th><th data-i18n="pricing.h120"></th></tr>
+          </thead>
+          <tbody id="price-rows"></tbody>
+        </table>
+      </div>
+      <p class="tiny muted" style="margin-top:16px;" data-html="pricing.travelNote"></p>
+
+      <div class="band band-red" style="margin-top:60px;">
+        <div>
+          <h2 data-i18n="pricing.ctaTitle"></h2>
+          <p data-i18n="pricing.ctaBody"></p>
+        </div>
+        <a class="btn btn-light btn-lg" href="booking.html" data-i18n="nav.bookNow"></a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer" data-slot="footer"></footer>
+
+  <script src="js/icons.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/main.js"></script>
+  <script>
+    SSX.injectLangSwitcher(document);
+    var filters = document.getElementById("filters");
+    var grid = document.getElementById("services-grid");
+    var rows = document.getElementById("price-rows");
+
+    function catLabel(cat) { return SSX.t("services.cat." + cat); }
+
+    function renderFilters(active) {
+      var cats = ["all"].concat(SSX.services.map(function (s) { return s.cat; })).filter(function (c, i, a) { return a.indexOf(c) === i; });
+      filters.innerHTML = "";
+      cats.forEach(function (c) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "chip" + (c === active ? " active" : "");
+        b.textContent = c === "all" ? SSX.t("services.all") : catLabel(c);
+        b.onclick = function () { renderFilters(c); renderGrid(c); };
+        filters.appendChild(b);
+      });
+    }
+
+    function renderGrid(cat) {
+      grid.innerHTML = "";
+      SSX.services.forEach(function (s) {
+        if (cat !== "all" && s.cat !== cat) return;
+        var a = document.createElement("a");
+        a.className = "card card-hover service-card";
+        a.href = "booking.html?service=" + encodeURIComponent(s.id);
+        a.innerHTML =
+          '<div class="icon">' + SSX.icon(s.icon) + '</div>' +
+          '<h3>' + SSX.t("svc." + s.id + ".name") + '</h3>' +
+          '<p>' + SSX.t("svc." + s.id + ".desc") + '</p>' +
+          '<div class="card-foot"><span class="price">' + SSX.helpers.fmt(s.price) + '<small data-i18n="price.per30"></small></span>' +
+          '<span class="card-link">' + SSX.t("home.btnHowNow") + ' →</span></div>';
+        grid.appendChild(a);
+      });
+    }
+
+    function renderPrices() {
+      rows.innerHTML = "";
+      SSX.services.forEach(function (s) {
+        var tr = document.createElement("tr");
+        tr.innerHTML =
+          '<td>' + SSX.t("svc." + s.id + ".name") + '</td>' +
+          '<td class="price">' + SSX.helpers.fmt(s.price * 2) + '</td>' +
+          '<td class="price">' + SSX.helpers.fmt(s.price) + '</td>' +
+          '<td class="price">' + SSX.helpers.fmt(Math.round(s.price * 2 * 1.4)) + '</td>' +
+          '<td class="price">' + SSX.helpers.fmt(Math.round(s.price * 2 * 1.8)) + '</td>';
+        rows.appendChild(tr);
+      });
+    }
+
+    renderFilters("all");
+    renderGrid("all");
+    renderPrices();
+
+    document.addEventListener("ssx:lang", function () {
+      renderFilters(document.querySelector("#filters .chip.active") ? document.querySelector("#filters .chip.active").textContent : "all");
+      renderGrid("all");
+      renderPrices();
+    });
+  </script>
+</body>
+</html>

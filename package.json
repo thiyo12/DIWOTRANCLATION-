@@ -1,0 +1,22 @@
+{
+  "name": "ssaaxcy-solutions",
+  "version": "1.0.0",
+  "description": "Ssaaxcy Solutions — Swiss digital concierge platform: live interpreting bookings, translation & life assistance, admin panel.",
+  "main": "start.js",
+  "scripts": {
+    "start": "node start.js",
+    "seed": "node -e \"const {initDb}=require('./db');initDb(true);console.log('Database seeded.');process.exit(0)\""
+  },
+  "engines": {
+    "node": ">=23.4.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.19.2",
+    "express-rate-limit": "^8.6.2",
+    "helmet": "^8.3.0",
+    "nodemailer": "^9.0.5",
+    "otplib": "^13.4.1"
+  }
+}

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ssaaxcy Solutions — Fill in any Swiss form online</title>
+  <meta name="description" content="Send us any Swiss form or document — we translate it, fill it in correctly and email the finished file back to you.">
+  <link rel="icon" href="assets/brand/favicon.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="site-header" data-slot="header">
+    <div class="container header-inner"></div>
+  </header>
+
+  <section class="section-tight">
+    <div class="container">
+      <span class="eyebrow" data-i18n="fill.eyebrow"></span>
+      <h1 class="section-title" style="font-size:1.9rem;" data-i18n="fill.title"></h1>
+      <p class="muted" style="margin-bottom:22px;" data-i18n="fill.subtitle"></p>
+
+      <div class="stepper" id="stepper"></div>
+
+      <div class="wizard">
+        <div class="wizard-body" id="wizard">
+          <h2 id="step-title"></h2>
+          <p class="step-hint" id="step-hint"></p>
+          <div id="step-content"></div>
+          <div class="wizard-footer">
+            <div>
+              <button class="btn btn-light" id="btn-prev" style="visibility:hidden;" data-i18n="common.back"></button>
+            </div>
+            <div class="right">
+              <button class="btn btn-primary" id="btn-next">Continue →</button>
+            </div>
+          </div>
+        </div>
+
+        <aside class="summary-card">
+          <div class="summary-head" data-i18n="fill.summaryTitle"></div>
+          <div class="summary-body" id="summary-body"></div>
+          <div class="secure-note"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg> &nbsp;<span data-i18n="hero.floatSub"></span></div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer" data-slot="footer"></footer>
+
+  <script src="js/icons.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/main.js"></script>
+  <script src="js/fillform.js"></script>
+</body>
+</html>

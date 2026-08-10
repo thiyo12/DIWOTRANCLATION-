@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clients — Ssaaxcy Admin</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="../assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <script src="js/admin.js"></script>
+  <script>
+    var state = { q: "" };
+    var DATA = null;
+
+    document.addEventListener("DOMContentLoaded", function () {
+      SS.guard().then(function (ok) {
+        if (!ok) return;
+        SS.shell("clients", "Client search", "Full history by name, email, phone or reference");
+        var c = document.getElementById("content");
+        c.innerHTML =
+          '<div class="toolbar">' +
+          '<input class="input" id="q" placeholder="Name, email, phone or reference…" style="flex:1;max-width:420px;">' +
+          '<button class="btn btn-dark btn-sm" id="btn-search">' + SS.icon("search", 14) + ' Search</button>' +
+          '</div>' +
+          '<div id="results"></div>';
+
+        var q = document.getElementById("q");
+        var search = function () {
+          state.q = q.value.trim();
+          if (!state.q) { document.getElementById("results").innerHTML = ""; return; }
+          load();
+        };
+        document.getElementById("btn-search").addEventListener("click", search);
+        q.addEventListener("keydown", function (e) { if (e.key === "Enter") search(); });
+
+        var params = new URLSearchParams(window.location.search);
+        if (params.get("q")) { q.value = params.get("q"); search(); }
+      });
+    });
+
+    function load() {
+      var r = document.getElementById("results");
+      r.innerHTML = '<div class="muted" style="padding:20px;">Searching…</div>';
+      SS.get("/admin/api/clients?q=" + encodeURIComponent(state.q)).then(function (d) {
+        DATA = d;
+        render();
+      }).catch(function (e) { r.innerHTML = ""; SS.toast(e.message, "error"); });
+    }
+
+    function render() {
+      var r = document.getElementById("results");
+      var total = (DATA.bookings ? DATA.bookings.length : 0) + (DATA.documents ? DATA.documents.length : 0) + (DATA.concierge ? DATA.concierge.length : 0);
+      if (!total) { r.innerHTML = '<div class="card card-pad muted">No client found for “' + SS.esc(state.q) + '”.</div>'; return; }
+      var out = '<div class="muted small" style="margin:10px 2px 14px;">' + total + ' record(s) for “' + SS.esc(state.q) + '”</div>';
+
+      function table(title, list, icon, cols, rowFn) {
+        if (!list || !list.length) return "";
+        out += '<div class="card" style="margin-bottom:18px;"><h3 class="card-title">' + SS.icon(icon, 16) + ' ' + title + ' (' + list.length + ')</h3>';
+        out += '<div class="table-wrap"><table class="tbl"><thead><tr>' + cols.map(function (c) { return "<th>" + c + "</th>"; }).join("") + "</tr></thead>";
+        out += list.map(rowFn).join("");
+        out += "</table></div></div>";
+      }
+
+      table("Bookings", DATA.bookings, "calendar",
+        ["Ref", "Service", "Date", "Time", "Status"],
+        function (b) {
+          return "<tr><td class='ref'>" + SS.txt(b.ref) + "</td><td>" + SS.txt(b.service_name || b.service_id) + "</td><td>" + SS.date(b.date) + "</td><td>" + SS.txt(b.time || "—") + "</td><td>" + SS.badge(b.status) + "</td></tr>";
+        });
+      table("Document requests", DATA.documents, "doc",
+        ["Ref", "Document", "Mode", "Languages", "Status"],
+        function (x) {
+          return "<tr><td class='ref'>" + SS.txt(x.ref) + "</td><td>" + SS.txt(x.doc_type_name || x.doc_type) + "</td><td>" + SS.txt(x.mode) + "</td><td>" + SS.txt(x.from_lang) + " → " + SS.txt(x.to_lang) + "</td><td>" + SS.badge(x.status) + "</td></tr>";
+        });
+      table("Concierge requests", DATA.concierge, "concierge",
+        ["Ref", "Service", "Title", "Status"],
+        function (x) {
+          return "<tr><td class='ref'>" + SS.txt(x.ref) + "</td><td>" + SS.txt(x.service) + "</td><td>" + SS.txt(x.title || "—") + "</td><td>" + SS.badge(x.status) + "</td></tr>";
+        });
+
+      r.innerHTML = out;
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documents — Ssaaxcy Admin</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="../assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <script src="js/admin.js"></script>
+  <script>
+    var state = { status: "" };
+    var ALL = [];
+
+    document.addEventListener("DOMContentLoaded", function () {
+      SS.guard().then(function (ok) {
+        if (!ok) return;
+        SS.shell("documents", "Document requests", "Fill & translate inbox");
+        var c = document.getElementById("content");
+        c.innerHTML =
+          '<div class="toolbar">' +
+          '<select id="f-status"><option value="">All statuses</option><option>received</option><option>in_progress</option><option>done</option><option>cancelled</option></select>' +
+          '<button class="btn btn-dark btn-sm" id="btn-refresh">↻ Refresh</button>' +
+          '</div>' +
+          '<div class="card"><div class="table-wrap"><table class="tbl" id="tbl"></table></div></div>';
+
+        document.getElementById("f-status").addEventListener("change", function () { state.status = this.value; render(); });
+        document.getElementById("btn-refresh").addEventListener("click", load);
+        load();
+      });
+    });
+
+    function load() {
+      SS.get("/admin/api/documents").then(function (d) {
+        ALL = d.items || [];
+        render();
+      }).catch(function (e) { SS.toast(e.message, "error"); });
+    }
+
+    function modeLabel(m) {
+      return { translate: "Translate", fill: "Fill form", both: "Translate & fill" }[m] || m;
+    }
+
+    function render() {
+      var list = ALL.filter(function (x) { return !state.status || x.status === state.status; });
+      var t = document.getElementById("tbl");
+      if (!list.length) { t.innerHTML = '<tr><td class="empty">No document requests here yet.</td></tr>'; return; }
+      var head = "<thead><tr><th>Ref</th><th>Document</th><th>Mode</th><th>Languages</th><th>Customer</th><th>Email</th><th>Created</th><th>Status</th><th></th></tr></thead>";
+      var rows = list.map(function (x) {
+        return "<tr>" +
+          "<td class='ref'>" + SS.txt(x.ref) + "</td>" +
+          "<td>" + SS.txt(x.doc_type_name || x.doc_type || "—") + "</td>" +
+          "<td>" + SS.txt(modeLabel(x.mode)) + "</td>" +
+          "<td>" + SS.txt(x.from_lang) + " → " + SS.txt(x.to_lang) + "</td>" +
+          "<td>" + SS.txt(x.customer) + "</td>" +
+          "<td>" + SS.txt(x.email) + "</td>" +
+          "<td>" + SS.when(x.created_at) + "</td>" +
+          "<td>" + SS.badge(x.status) + "</td>" +
+          "<td><button class='icon-btn' onclick='viewItem(" + x.id + ")'>" + SS.icon("eye", 14) + " View</button></td>" +
+          "</tr>";
+      }).join("");
+      t.innerHTML = head + rows;
+    }
+
+    window.viewItem = function (id) {
+      var b = null;
+      ALL.forEach(function (x) { if (x.id === id) b = x; });
+      if (!b) { SS.toast("Request not found.", "error"); return; }
+
+      var fields = "";
+      try {
+        var f = JSON.parse(b.fields || "{}");
+        var entries = Object.keys(f);
+        if (entries.length) {
+          fields = entries.map(function (k) {
+            return '<div class="detail-row"><span>' + SS.esc(k) + '</span><b>' + SS.esc(f[k]) + '</b></div>';
+          }).join("");
+        }
+      } catch (e) {}
+
+      var m = SS.modal(
+        '<h2>' + SS.esc(b.doc_type_name || b.doc_type) + ' · ' + SS.esc(b.ref) + '</h2>' +
+        '<div>' +
+          '<div class="detail-row"><span>Status</span><b>' + SS.badge(b.status) + '</b></div>' +
+          '<div class="detail-row"><span>Mode</span><b>' + SS.esc(modeLabel(b.mode)) + '</b></div>' +
+          '<div class="detail-row"><span>Languages</span><b>' + SS.esc(b.from_lang) + " → " + SS.esc(b.to_lang) + '</b></div>' +
+          '<div class="detail-row"><span>Customer</span><b>' + SS.esc(b.customer) + '</b></div>' +
+          '<div class="detail-row"><span>Email</span><b>' + SS.esc(b.email) + '</b></div>' +
+          '<div class="detail-row"><span>Phone</span><b>' + SS.esc(b.phone || "—") + '</b></div>' +
+          '<div class="detail-row"><span>Client IP</span><b>' + SS.esc(b.ip || "—") + '</b></div>' +
+          (fields || '') +
+          (b.notes ? '<div class="card card-pad mt" style="background:#faf8f3;"><div class="small muted">Notes</div><p style="white-space:pre-wrap;margin-top:6px;">' + SS.esc(b.notes) + '</p></div>' : '') +
+        '</div>' +
+        '<div class="flex mt">' +
+        '<select id="c-status" class="input" style="flex:1;"><option value="received">received</option><option value="in_progress">in progress</option><option value="done">done</option><option value="cancelled">cancelled</option></select>' +
+        '<button class="btn btn-dark btn-sm" id="c-save">Save status</button>' +
+        '<button class="btn btn-light btn-sm danger" id="c-del">Delete</button></div>'
+      );
+      var sel = m.querySelector("#c-status");
+      ["received", "in_progress", "done", "cancelled"].forEach(function (s) { if (b.status === s) sel.value = s; });
+
+      m.querySelector("#c-save").onclick = function () {
+        SS.patch("/admin/api/documents/" + id, { status: sel.value }).then(function () {
+          m.remove(); load(); SS.toast("Status updated.", "success");
+        }).catch(function (e) { SS.toast(e.message, "error"); });
+      };
+      m.querySelector("#c-del").onclick = function () {
+        SS.confirm("Delete request " + b.ref + "?", function () {
+          SS.del("/admin/api/documents/" + id).then(function () { m.remove(); load(); SS.toast("Request deleted.", "success"); });
+        });
+      };
+    };
+  </script>
+</body>
+</html>

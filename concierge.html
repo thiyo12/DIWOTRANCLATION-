@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ssaaxcy Solutions — Swiss Life Concierge</title>
+  <meta name="description" content="A human team for your Swiss life: official letters, phone calls, appointments, permits, forms, travel and business services — in German, English and Tamil.">
+  <link rel="icon" href="assets/brand/favicon.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="site-header" data-slot="header">
+    <div class="container header-inner"></div>
+  </header>
+
+  <section class="page-hero">
+    <div class="container">
+      <div class="breadcrumb"><a href="index.html" data-i18n="nav.home"></a> → <span data-i18n="nav.concierge"></span></div>
+      <h1 data-i18n="concierge.title"></h1>
+      <p data-i18n="concierge.subtitle"></p>
+      <p data-i18n="concierge.loc" style="margin-top:10px;color:rgba(255,255,255,0.85);font-weight:600;"></p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head center">
+        <span class="eyebrow" data-i18n="concierge.eyebrow"></span>
+        <h2 class="section-title" data-i18n="concierge.select"></h2>
+      </div>
+
+      <div class="concierge-grid" id="svc-cards"></div>
+
+      <div class="section-head center" style="margin-top:70px;">
+        <span class="eyebrow" data-i18n="concierge.request"></span>
+        <h2 class="section-title" data-i18n="concierge.select"></h2>
+        <p class="section-intro" data-i18n="concierge.response"></p>
+      </div>
+
+      <div class="form-panel">
+        <form id="concierge-form" novalidate>
+          <div class="field">
+            <label data-i18n="cf.type"></label>
+            <div class="radio-list" id="svc-radio"></div>
+          </div>
+
+          <div class="two-col">
+            <div class="field"><label data-i18n="field.languagePair"></label>
+              <select class="select" id="c-lang"></select>
+            </div>
+            <div class="field"><label data-i18n="cf.title"></label>
+              <input class="input" id="c-title" data-ph="cf.titlePh">
+            </div>
+          </div>
+
+          <div class="field">
+            <label data-i18n="cf.message"></label>
+            <textarea class="textarea" id="c-detail" data-ph="cf.messagePh"></textarea>
+          </div>
+
+          <div class="two-col">
+            <div class="field"><label data-i18n="cf.fullName"></label><input class="input" id="c-name" data-ph="cf.fullName"></div>
+            <div class="field"><label data-i18n="cf.email"></label><input class="input" id="c-email" type="email" data-ph="ph.email"></div>
+            <div class="field"><label data-i18n="cf.phone"></label><input class="input" id="c-phone" data-ph="ph.phone"></div>
+          </div>
+
+          <input type="text" name="company_website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
+
+          <button type="submit" class="btn btn-primary btn-lg btn-block" id="c-submit" data-i18n="cf.send"></button>
+          <p class="tiny muted" style="text-align:center;margin-top:12px;" data-i18n="cf.noPay"></p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" style="padding-top:0;">
+    <div class="container">
+      <div class="member-pill-box">
+        <div class="membership-card">
+          <div>
+            <span class="eyebrow" style="color:#e7c9c5;" data-i18n="member.eyebrow"></span>
+            <h2 data-i18n="member.title"></h2>
+            <p data-i18n="member.body"></p>
+          </div>
+          <div class="membership-price">
+            <div class="amount">CHF 29<small>/mo</small></div>
+            <div class="per" data-i18n="member.per"></div>
+            <a href="booking.html" class="btn btn-light" data-i18n="member.cta"></a>
+          </div>
+        </div>
+        <div class="priority-note">
+          <span style="color:var(--champagne);">✦</span><span data-i18n="member.priority"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer" data-slot="footer"></footer>
+
+  <script src="js/icons.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/main.js"></script>
+  <script>
+    SSX.injectLangSwitcher(document);
+
+    // Concierge service cards (premium line icons)
+    var cardDefs = [
+      { key: "letters", icon: "file-text", price: "CHF 49", per: "letter" },
+      { key: "calls", icon: "phone-call", price: "CHF 59", per: "call" },
+      { key: "appointments", icon: "calendar", price: "CHF 29", per: "appointment" },
+      { key: "visa", icon: "id-card", price: "on request", per: "" },
+      { key: "forms", icon: "government", price: "on request", per: "" },
+      { key: "travel", icon: "plane", price: "on request", per: "" },
+      { key: "business", icon: "briefcase", price: "on request", per: "" },
+      { key: "translation", icon: "translate", price: "CHF 0.20", per: "word" }
+    ];
+    var grid = document.getElementById("svc-cards");
+    cardDefs.forEach(function (d, i) {
+      var card = document.createElement("div");
+      card.className = "concierge-card" + (d.key === "letters" ? "" : "");
+      card.innerHTML =
+        '<div class="icon">' + SSX.icon(d.icon) + '</div>' +
+        (i === 0 ? '<span class="tag">' + SSX.t("member.mostLoved") + '</span>' : "") +
+        '<h3>' + SSX.t("con.type." + d.key) + '</h3>' +
+        '<p>' + SSX.t("con.type." + d.key + ".desc") + '</p>' +
+        '<div class="price-tag">' + d.price + (d.per ? ' <small>/ ' + d.per + "</small>" : "") + '</div>';
+      grid.appendChild(card);
+    });
+
+    // Service radio options
+    var radioHost = document.getElementById("svc-radio");
+    var typeKeys = ["letters", "calls", "appointments", "visa", "forms", "travel", "business", "translation"];
+    typeKeys.forEach(function (k, i) {
+      var l = document.createElement("label");
+      l.className = "radio-item" + (i === 0 ? " selected" : "");
+      l.setAttribute("data-svc", k);
+      l.innerHTML = '<span class="r"></span><div><h4>' + SSX.t("con.type." + k) + '</h4><p>' + SSX.t("con.type." + k + ".desc") + '</p></div>';
+      radioHost.appendChild(l);
+    });
+
+    // Languages (exactly 3)
+    var langSel = document.getElementById("c-lang");
+    SSX.languages.forEach(function (l) {
+      var o = document.createElement("option");
+      o.value = l.code;
+      o.textContent = SSX.t("lang." + l.code) + " (" + l.native + ")";
+      langSel.appendChild(o);
+    });
+
+    document.addEventListener("click", function (e) {
+      var r = e.target.closest ? e.target.closest(".radio-item") : null;
+      if (r && radioHost.contains(r)) {
+        radioHost.querySelectorAll(".radio-item").forEach(function (x) { x.classList.remove("selected"); });
+        r.classList.add("selected");
+      }
+    });
+
+    var form = document.getElementById("concierge-form");
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var svcEl = document.querySelector("#concierge-form .radio-item.selected");
+      var detail = document.getElementById("c-detail").value.trim();
+      var name = document.getElementById("c-name").value.trim();
+      var email = document.getElementById("c-email").value.trim();
+      if (!detail) { SSX.toast(SSX.t("err.detail"), "error"); return; }
+      if (!name) { SSX.toast(SSX.t("err.name"), "error"); return; }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { SSX.toast(SSX.t("err.email"), "error"); return; }
+
+      var payload = {
+        service: svcEl.getAttribute("data-svc"),
+        title: document.getElementById("c-title").value.trim(),
+        language_code: langSel.value,
+        language_name: langSel.selectedOptions[0] ? langSel.selectedOptions[0].textContent : "",
+        detail: detail,
+        customer: name,
+        email: email,
+        phone: document.getElementById("c-phone").value.trim(),
+        files: "",
+        website: document.querySelector("#concierge-form .hp-field").value
+      };
+
+      var finish = function (ref) {
+        SSX.saveLocal("ssx.lastConcierge", Object.assign({ ref: ref }, payload));
+        var modal = SSX.openModal(
+          "<h3>" + SSX.t("cf.sentTitle") + "</h3>" +
+          "<p class=\"muted\" style=\"margin:12px 0;\">" + SSX.t("cf.ref") + " <b>" + SSX.helpers.esc(ref) + "</b><br>" +
+          SSX.t("cf.sentBody") + " " + SSX.helpers.esc(payload.email) + "</p>" +
+          '<button type="button" class="btn btn-primary" onclick="this.closest(\'.modal-backdrop\').remove()">' + SSX.t("common.ok") + "</button>");
+        form.reset();
+      };
+
+      var btn = document.getElementById("c-submit");
+      btn.disabled = true;
+      btn.textContent = SSX.t("cf.sending");
+
+      if (SSX.http) {
+        SSX.request("POST", "/api/concierge", payload).then(function (res) {
+          btn.disabled = false; btn.textContent = SSX.t("cf.send");
+          finish(res.ref);
+        }).catch(function (err) {
+          btn.disabled = false; btn.textContent = SSX.t("cf.send");
+          SSX.toast(err.message || SSX.t("err.general"), "error");
+        });
+      } else {
+        setTimeout(function () {
+          btn.disabled = false; btn.textContent = SSX.t("cf.send");
+          finish(SSX.ref("SSXC"));
+        }, 500);
+      }
+    });
+  </script>
+</body>
+</html>

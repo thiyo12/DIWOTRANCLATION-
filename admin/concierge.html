@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Life Concierge — Ssaaxcy Admin</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="../assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <script src="js/admin.js"></script>
+  <script>
+    var state = { status: "", svc: "" };
+    var ALL = [];
+
+    document.addEventListener("DOMContentLoaded", function () {
+      SS.guard().then(function (ok) {
+        if (!ok) return;
+        SS.shell("concierge", "Life Concierge requests", "Request inbox");
+        var c = document.getElementById("content");
+        c.innerHTML =
+          '<div class="toolbar">' +
+          '<select id="f-status"><option value="">All statuses</option><option>new</option><option>handled</option><option>closed</option></select>' +
+          '<select id="f-svc"><option value="">All services</option><option value="letters">Letters</option><option value="calls">Phone calls</option><option value="appointments">Appointments</option><option value="translation">Translation</option></select>' +
+          '<button class="btn btn-dark btn-sm" id="btn-refresh">↻ Refresh</button>' +
+          '</div>' +
+          '<div class="card"><div class="table-wrap"><table class="tbl" id="tbl"></table></div></div>';
+
+        document.getElementById("f-status").addEventListener("change", function () { state.status = this.value; render(); });
+        document.getElementById("f-svc").addEventListener("change", function () { state.svc = this.value; render(); });
+        document.getElementById("btn-refresh").addEventListener("click", load);
+
+        load();
+      });
+    });
+
+    function load() {
+      SS.get("/admin/api/concierge").then(function (d) {
+        ALL = d.items;
+        render();
+      }).catch(function (e) { SS.toast(e.message, "error"); });
+    }
+
+    function render() {
+      var list = ALL.filter(function (x) {
+        if (state.status && x.status !== state.status) return false;
+        if (state.svc && x.service !== state.svc) return false;
+        return true;
+      });
+      var t = document.getElementById("tbl");
+      if (!list.length) { t.innerHTML = '<tr><td class="empty">No concierge requests here yet.</td></tr>'; return; }
+      var head = "<thead><tr><th>Ref</th><th>Service</th><th>Title</th><th>Language</th><th>Customer</th><th>Created</th><th>Status</th><th></th></tr></thead>";
+      var rows = list.map(function (x) {
+        return "<tr>" +
+          "<td class='ref'>" + SS.txt(x.ref) + "</td>" +
+          "<td>" + svcLabel(x.service) + "</td>" +
+          "<td>" + SS.txt(x.title || "—") + "</td>" +
+          "<td>" + SS.txt(x.language_name || x.language_code || "—") + "</td>" +
+          "<td>" + SS.txt(x.customer) + "</td>" +
+          "<td>" + SS.when(x.created_at) + "</td>" +
+          "<td>" + SS.badge(x.status) + "</td>" +
+          "<td><button class='icon-btn' onclick='viewItem(" + x.id + ")'>" + SS.icon("eye", 14) + " View</button></td>" +
+          "</tr>";
+      }).join("");
+      t.innerHTML = head + rows;
+    }
+
+    function svcLabel(s) {
+      var map = { letters: SS.icon("mail", 14) + " Letters", calls: SS.icon("phone", 14) + " Phone calls", appointments: SS.icon("calendar", 14) + " Appointments", translation: SS.icon("globe", 14) + " Translation" };
+      return map[s] || SS.txt(s);
+    }
+
+    window.viewItem = function (id) {
+      var b = null;
+      ALL.forEach(function (x) { if (x.id === id) b = x; });
+      if (!b) { SS.toast("Request not found.", "error"); return; }
+
+      var m = SS.modal(
+        '<h2>' + svcLabel(b.service) + ' · ' + SS.esc(b.ref) + '</h2>' +
+        '<div>' +
+          '<div class="detail-row"><span>Status</span><b>' + SS.badge(b.status) + '</b></div>' +
+          '<div class="detail-row"><span>Title</span><b>' + SS.esc(b.title || "—") + '</b></div>' +
+          '<div class="detail-row"><span>Language</span><b>' + SS.esc(b.language_name || b.language_code || "—") + '</b></div>' +
+          '<div class="detail-row"><span>Customer</span><b>' + SS.esc(b.customer) + '</b></div>' +
+          '<div class="detail-row"><span>Email</span><b>' + SS.esc(b.email) + '</b></div>' +
+          '<div class="detail-row"><span>Phone</span><b>' + SS.esc(b.phone || "—") + '</b></div>' +
+          '<div class="detail-row"><span>Attached file</span><b>' + SS.esc(b.files || "—") + '</b></div>' +
+          '<div class="card card-pad mt" style="background:#faf8f3;"><div class="small muted">Request details</div><p style="white-space:pre-wrap;margin-top:6px;">' + SS.esc(b.detail || "—") + '</p></div>' +
+        '</div>' +
+        '<div class="flex mt">' +
+        '<select id="c-status" class="input" style="flex:1;"><option value="new">new</option><option value="handled">handled</option><option value="closed">closed</option></select>' +
+        '<button class="btn btn-dark btn-sm" id="c-save">Save status</button>' +
+        '<button class="btn btn-light btn-sm danger" id="c-del">Delete</button></div>'
+      );
+      var sel = m.querySelector("#c-status");
+      ["new", "handled", "closed"].forEach(function (s) { if (b.status === s) sel.value = s; });
+
+      m.querySelector("#c-save").onclick = function () {
+        SS.patch("/admin/api/concierge/" + id, { status: sel.value }).then(function () {
+          m.remove(); load(); SS.toast("Status updated.", "success");
+        }).catch(function (e) { SS.toast(e.message, "error"); });
+      };
+      m.querySelector("#c-del").onclick = function () {
+        SS.confirm("Delete request " + b.ref + "?", function () {
+          SS.del("/admin/api/concierge/" + id).then(function () { m.remove(); load(); SS.toast("Request deleted.", "success"); });
+        });
+      };
+    };
+  </script>
+</body>
+</html>

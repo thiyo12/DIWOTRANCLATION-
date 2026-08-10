@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Catalog & Prices — Ssaaxcy Admin</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="../assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <script src="js/admin.js"></script>
+  <script>
+    var CAT = { settings: {}, services: [], languages: [] };
+
+    document.addEventListener("DOMContentLoaded", function () {
+      SS.guard().then(function (ok) {
+        if (!ok) return;
+        SS.shell("catalog", "Catalog & Prices", "Content management");
+        var c = document.getElementById("content");
+        c.innerHTML =
+          '<div class="grid-2">' +
+          '<div class="card card-pad"><h3>' + SS.icon("tag", 16) + '&nbsp;Services</h3>' +
+          '<div id="svc-list" class="mb"></div>' +
+          '<button class="btn btn-red btn-sm" id="btn-add-svc">+ Add service</button></div>' +
+          '<div>' +
+          '<div class="card card-pad mb"><h3>' + SS.icon("doc", 16) + '&nbsp;Document types</h3>' +
+          '<div id="doc-list" class="mb"></div>' +
+          '<button class="btn btn-dark btn-sm" id="btn-add-doc">+ Add document type</button></div>' +
+          '<div class="card card-pad mb"><h3>' + SS.icon("globe", 16) + '&nbsp;Languages</h3><div id="lang-list" class="mb"></div>' +
+          '<div class="flex"><input class="input" id="l-code" placeholder="Code (DE)" style="width:90px;">' +
+          '<input class="input" id="l-name" placeholder="Name (German)"><button class="btn btn-dark btn-sm" id="btn-add-lang">Add</button></div></div>' +
+          '</div>' +
+          '</div>' +
+          '<div class="card card-pad" style="margin-top:18px;"><h3>' + SS.icon("edit", 16) + '&nbsp;Settings</h3>' +
+          '<div class="field"><label>Brand name</label><input class="input" id="s-brand" value=""></div>' +
+          '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Travel fee (CHF)</label><input class="input" id="s-fee" type="number" value=""></div>' +
+          '<div class="field"><label>Support email</label><input class="input" id="s-email" value=""></div></div>' +
+          '<div class="field"><label>Support phone</label><input class="input" id="s-phone" value=""></div>' +
+          '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>WhatsApp</label><input class="input" id="s-wa" placeholder="+41 79 000 00 00" value=""></div>' +
+          '<div class="field"><label>Instagram URL</label><input class="input" id="s-ig" placeholder="https://instagram.com/…" value=""></div></div>' +
+          '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Facebook URL</label><input class="input" id="s-fb" placeholder="https://facebook.com/…" value=""></div>' +
+          '<div class="field"><label>LinkedIn URL</label><input class="input" id="s-li" placeholder="https://linkedin.com/…" value=""></div></div>' +
+          '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Hero image URL (photo replaces the illustration)</label><input class="input" id="s-hero" placeholder="https://…/photo.jpg" value=""></div>' +
+          '<div class="field"><label>Flag animation</label><select class="input" id="s-flag">' +
+            '<option value="drift">Drifting</option><option value="wave">Waving</option><option value="still">Still</option></select></div></div>' +
+          '<button class="btn btn-dark btn-sm" id="btn-save-settings">Save settings</button>' +
+          '</div>' +
+          '<div class="card card-pad" style="margin-top:18px;"><h3>' + SS.icon("mail", 16) + '&nbsp;Email sending (SMTP)</h3>' +
+          '<div class="two-col mx">' +
+          '<div class="field" style="padding-right:9px;"><label>SMTP host</label><input class="input" id="sm-host" placeholder="smtp.example.com" value=""></div>' +
+          '<div class="field"><label>Port</label><input class="input" id="sm-port" type="number" placeholder="587" value=""></div></div>' +
+          '<div class="two-col mx">' +
+          '<div class="field" style="padding-right:9px;"><label>Username</label><input class="input" id="sm-user" value=""></div>' +
+          '<div class="field"><label>Password</label><input class="input" id="sm-pass" type="password" value=""></div></div>' +
+          '<div class="two-col mx">' +
+          '<div class="field" style="padding-right:9px;"><label>From (name)</label><input class="input" id="sm-from" placeholder="Ssaaxcy Solutions" value=""></div>' +
+          '<div class="field"><label>Secure (SSL/TLS)</label><select class="input" id="sm-secure"><option value="0">No (STARTTLS)</option><option value="1">Yes (implicit TLS)</option></select></div></div>' +
+          '<p class="small muted">Leave SMTP empty to keep auto-replies in "deferred" demo mode (logged in the server console).</p>' +
+          '<button class="btn btn-dark btn-sm" id="btn-save-smtp">Save SMTP</button>' +
+          '</div>' +
+          '<div class="card card-pad" style="margin-top:18px;"><h3>' + SS.icon("shield-check", 16) + '&nbsp;Two-step verification (2FA)</h3>' +
+          '<p class="small muted mb" id="fa-status">Loading…</p>' +
+          '<div class="flex" id="fa-actions"></div></div>';
+        document.getElementById("btn-add-svc").addEventListener("click", function () { editSvc(null); });
+        document.getElementById("btn-add-doc").addEventListener("click", function () { editDoc(null); });
+        document.getElementById("btn-add-lang").addEventListener("click", addLang);
+        document.getElementById("btn-save-settings").addEventListener("click", saveSettings);
+        document.getElementById("btn-save-smtp").addEventListener("click", saveSmtp);
+        load();
+        load2fa();
+      });
+    });
+
+    function load() {
+      SS.get("/admin/api/catalog").then(function (d) {
+        CAT = { settings: d.settings, services: d.services, languages: d.languages, docTypes: d.docTypes };
+        renderServices();
+        renderLanguages();
+        renderDocTypes();
+        renderSettings();
+        renderSmtp();
+      }).catch(function (e) { SS.toast(e.message, "error"); });
+    }
+
+    function renderDocTypes() {
+      var list = document.getElementById("doc-list");
+      if (!CAT.docTypes.length) { list.innerHTML = '<div class="empty">No document types.</div>'; return; }
+      list.innerHTML = CAT.docTypes.map(function (x) {
+        return '<div class="card card-pad" style="box-shadow:none;border:1px solid #eee;margin-bottom:10px;padding:12px 14px;">' +
+          '<div class="flex between"><div><b>' + SS.esc(x.name_en) + '</b> <span class="muted small">' + SS.esc(x.name_de) + " · " + SS.esc(x.name_ta) + '</span></div>' +
+          '<div style="white-space:nowrap;"><button class="icon-btn" onclick="editDoc(\'' + x.id + '\')">' + SS.icon("edit", 14) + '</button> ' +
+          '<button class="icon-btn danger" onclick="delDoc(\'' + x.id + '\')">' + SS.icon("trash", 14) + '</button></div></div></div>';
+      }).join("");
+    }
+
+    window.editDoc = function (id) {
+      var x = null;
+      CAT.docTypes.forEach(function (d) { if (d.id === id) x = d; });
+      var m = SS.modal(
+        '<h2>' + (x ? "Edit document type" : "New document type") + '</h2>' +
+        '<div class="two-col mx">' +
+        '<div class="field" style="padding-right:9px;"><label>ID (EN, no spaces)</label><input class="input" id="d-id" value="' + SS.esc((x && x.id) || "") + '" ' + (x ? "disabled" : "") + '></div>' +
+        '<div class="field"><label>Icon name (translate, file, id-card…)</label><input class="input" id="d-icon" value="' + SS.esc((x && x.icon) || "file") + '"></div></div>' +
+        '<div class="field"><label>Name (English)</label><input class="input" id="d-en" value="' + SS.esc((x && x.name_en) || "") + '"></div>' +
+        '<div class="two-col mx">' +
+        '<div class="field" style="padding-right:9px;"><label>Name (Deutsch)</label><input class="input" id="d-de" value="' + SS.esc((x && x.name_de) || "") + '"></div>' +
+        '<div class="field"><label>Name (தமிழ்)</label><input class="input" id="d-ta" value="' + SS.esc((x && x.name_ta) || "") + '"></div></div>' +
+        '<label class="flex mb"><input type="checkbox" id="d-active" ' + (!x || x.active ? "checked" : "") + '> <span>Visible on website</span></label>' +
+        '<button class="btn btn-red btn-block" id="d-save">Save</button>'
+      );
+      m.querySelector("#d-save").onclick = function () {
+        var p = {
+          id: (m.querySelector("#d-id").value || "").trim().toLowerCase().replace(/\s+/g, "_").slice(0, 40),
+          icon: m.querySelector("#d-icon").value.trim(),
+          name_en: m.querySelector("#d-en").value,
+          name_de: m.querySelector("#d-de").value,
+          name_ta: m.querySelector("#d-ta").value,
+          active: m.querySelector("#d-active").checked ? 1 : 0
+        };
+        if (!p.id || !p.name_en.trim()) { SS.toast("ID and English name are required.", "error"); return; }
+        var req = x ? SS.patch("/admin/api/doc-types/" + x.id, p) : SS.post("/admin/api/doc-types", p);
+        req.then(function () { m.remove(); load(); SS.toast("Document type saved.", "success"); })
+          .catch(function (e) { SS.toast(e.message, "error"); });
+      };
+    };
+
+    window.delDoc = function (id) {
+      SS.confirm("Delete this document type?", function () {
+        SS.del("/admin/api/doc-types/" + id).then(function () { load(); SS.toast("Document type deleted.", "success"); });
+      });
+    };
+
+    function renderServices() {
+      var list = document.getElementById("svc-list");
+      if (!CAT.services.length) { list.innerHTML = '<div class="empty">No services.</div>'; return; }
+      list.innerHTML = CAT.services.map(function (s) {
+        return '<div class="card card-pad" style="box-shadow:none;border:1px solid #eee;margin-bottom:10px;padding:12px 14px;">' +
+          '<div class="flex between">' +
+          '<div><b>' + SS.esc(s.icon || "") + ' ' + SS.esc(s.name) + '</b> <span class="muted small">' + SS.esc(s.type || "") + '</span><br>' +
+          '<span class="small muted">' + SS.esc(s.desc || "") + '</span></div>' +
+          '<div style="text-align:right;white-space:nowrap;"><span style="font-weight:800;">' + SS.fmt(s.price) + '/h</span><br>' +
+          '<button class="icon-btn" onclick="editSvc(\'' + s.id + '\')">' + SS.icon("edit", 14) + '</button> ' +
+          '<button class="icon-btn danger" onclick="delSvc(\'' + s.id + '\')">' + SS.icon("trash", 14) + '</button></div>' +
+          '</div></div>';
+      }).join("");
+    }
+
+    window.editSvc = function (id) {
+      var s = null;
+      CAT.services.forEach(function (x) { if (x.id === id) s = x; });
+      var m = SS.modal(
+        '<h2>' + (s ? "Edit service" : "New service") + '</h2>' +
+        '<div class="two-col mx">' +
+        '<div class="field" style="padding-right:9px;"><label>Name</label><input class="input" id="s-name" value="' + SS.esc((s && s.name) || "") + '"></div>' +
+        '<div class="field"><label>Price / hour (CHF)</label><input class="input" id="s-price" type="number" step="0.5" value="' + SS.esc((s && s.price) || "") + '"></div>' +
+        '</div>' +
+        '<div class="two-col mx">' +
+        '<div class="field" style="padding-right:9px;"><label>Icon (emoji)</label><input class="input" id="s-icon" value="' + SS.esc((s && s.icon) || "✨") + '"></div>' +
+        '<div class="field"><label>Type</label><select class="input" id="s-type">' +
+        '<option>Medical</option><option>Official</option><option>Family</option><option>Finance</option><option>Work</option><option>Other</option></select></div>' +
+        '</div>' +
+        '<div class="field"><label>Description</label><textarea class="input" id="s-desc" style="width:100%;resize:vertical;">' + SS.esc((s && s.desc) || "") + '</textarea></div>' +
+        '<label class="flex mb"><input type="checkbox" id="s-active" ' + (s && !s.active ? "" : "checked") + '> <span>Visible on website</span></label>' +
+        '<button class="btn btn-red btn-block" id="s-save">Save service</button>'
+      );
+      var typeSel = m.querySelector("#s-type");
+      if (s) { typeSel.value = s.type || "Other"; }
+      m.querySelector("#s-save").onclick = function () {
+        var p = {
+          name: m.querySelector("#s-name").value,
+          price: m.querySelector("#s-price").value,
+          icon: m.querySelector("#s-icon").value,
+          type: typeSel.value,
+          desc: m.querySelector("#s-desc").value,
+          active: m.querySelector("#s-active").checked ? 1 : 0
+        };
+        if (!p.name.trim()) { SS.toast("Name is required.", "error"); return; }
+        var req = s ? SS.patch("/admin/api/services/" + s.id, p) : SS.post("/admin/api/services", p);
+        req.then(function () { m.remove(); load(); SS.toast("Service saved.", "success"); })
+          .catch(function (e) { SS.toast(e.message, "error"); });
+      };
+    };
+
+    window.delSvc = function (id) {
+      SS.confirm("Delete this service?", function () {
+        SS.del("/admin/api/services/" + id).then(function () { load(); SS.toast("Service deleted.", "success"); });
+      });
+    };
+
+    function renderLanguages() {
+      var list = document.getElementById("lang-list");
+      if (!CAT.languages.length) { list.innerHTML = '<div class="empty">No languages.</div>'; return; }
+      list.innerHTML = CAT.languages.map(function (l) {
+        return '<span class="chip" style="display:inline-flex;align-items:center;gap:6px;background:#f4efe7;border:1px solid #e2e0da;border-radius:999px;padding:5px 12px;margin:0 6px 8px 0;font-size:0.85rem;"><b>' + SS.esc(l.code) + '</b> ' + SS.esc(l.name) + '</span>';
+      }).join("");
+    }
+
+    function addLang() {
+      var code = document.getElementById("l-code").value.trim();
+      var name = document.getElementById("l-name").value.trim();
+      if (!code || !name) { SS.toast("Code and name are required.", "error"); return; }
+      SS.post("/admin/api/languages", { code: code.toUpperCase(), name: name }).then(function () {
+        document.getElementById("l-code").value = "";
+        document.getElementById("l-name").value = "";
+        load();
+        SS.toast("Language added.", "success");
+      }).catch(function (e) { SS.toast(e.message, "error"); });
+    }
+
+    function renderSettings() {
+      document.getElementById("s-brand").value = CAT.settings.brand_name || "";
+      document.getElementById("s-fee").value = CAT.settings.travel_fee || "25";
+      document.getElementById("s-email").value = CAT.settings.support_email || "";
+      document.getElementById("s-phone").value = CAT.settings.support_phone || "";
+      document.getElementById("s-wa").value = CAT.settings.whatsapp || "";
+      document.getElementById("s-ig").value = CAT.settings.instagram || "";
+      document.getElementById("s-fb").value = CAT.settings.facebook || "";
+      document.getElementById("s-li").value = CAT.settings.linkedin || "";
+      document.getElementById("s-hero").value = CAT.settings.hero_image_url || "";
+      document.getElementById("s-flag").value = CAT.settings.flag_style || "drift";
+    }
+
+    function saveSettings() {
+      var body = {
+        brand_name: document.getElementById("s-brand").value,
+        travel_fee: document.getElementById("s-fee").value,
+        support_email: document.getElementById("s-email").value,
+        support_phone: document.getElementById("s-phone").value,
+        whatsapp: document.getElementById("s-wa").value,
+        instagram: document.getElementById("s-ig").value,
+        facebook: document.getElementById("s-fb").value,
+        linkedin: document.getElementById("s-li").value,
+        hero_image_url: document.getElementById("s-hero").value,
+        flag_style: document.getElementById("s-flag").value
+      };
+      SS.patch("/admin/api/settings", body).then(function () {
+        load();
+        SS.toast("Settings saved.", "success");
+      }).catch(function (e) { SS.toast(e.message, "error"); });
+    }
+
+    function renderSmtp() {
+      document.getElementById("sm-host").value = CAT.settings.smtp_host || "";
+      document.getElementById("sm-port").value = CAT.settings.smtp_port || "587";
+      document.getElementById("sm-user").value = CAT.settings.smtp_user || "";
+      document.getElementById("sm-pass").value = CAT.settings.smtp_pass || "";
+      document.getElementById("sm-from").value = CAT.settings.smtp_from || "";
+      document.getElementById("sm-secure").value = CAT.settings.smtp_secure || "0";
+    }
+
+    function saveSmtp() {
+      SS.patch("/admin/api/settings", {
+        smtp_host: document.getElementById("sm-host").value.trim(),
+        smtp_port: document.getElementById("sm-port").value,
+        smtp_user: document.getElementById("sm-user").value,
+        smtp_pass: document.getElementById("sm-pass").value,
+        smtp_from: document.getElementById("sm-from").value,
+        smtp_secure: document.getElementById("sm-secure").value
+      }).then(function () {
+        load();
+        SS.toast("SMTP saved.", "success");
+      }).catch(function (e) { SS.toast(e.message, "error"); });
+    }
+
+    function load2fa() {
+      SS.get("/admin/api/me").then(function (d) {
+        var on = !!(d.user && d.user.twofa);
+        document.getElementById("fa-status").textContent = on
+          ? "Two-step verification is ON. Sign-in requires a code from your authenticator app."
+          : "Two-step verification is OFF.";
+        var a = document.getElementById("fa-actions");
+        a.innerHTML = on
+          ? '<button class="btn btn-light btn-sm danger" id="fa-off">Disable 2FA</button>'
+          : '<button class="btn btn-dark btn-sm" id="fa-on">Enable 2FA</button>';
+        var btn = a.firstChild;
+        btn.onclick = on ? disable2fa : enable2fa;
+      }).catch(function (e) { SS.toast(e.message, "error"); });
+    }
+
+    function enable2fa() {
+      SS.get("/admin/api/2fa/setup").then(function (d) {
+        var url = d.otpauth;
+        var m = SS.modal(
+          '<h2>Enable two-step verification</h2>' +
+          '<p class="small muted">Scan this QR with Google Authenticator, Authy or another TOTP app, then enter the 6-digit code to confirm.</p>' +
+          '<div class="card card-pad" style="text-align:center;margin:14px 0;">' +
+          '<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(url) + '" alt="QR code" width="180" height="180" style="border-radius:10px;">' +
+          '<p class="small muted mt" style="word-break:break-all;">' + SS.esc(d.secret) + '</p></div>' +
+          '<div class="field"><label>Verification code</label><input class="input" id="fa-code" inputmode="numeric" maxlength="6" placeholder="000 000"></div>' +
+          '<button class="btn btn-red btn-block" id="fa-confirm">Confirm &amp; enable</button>'
+        );
+        m.querySelector("#fa-confirm").onclick = function () {
+          var code = m.querySelector("#fa-code").value.trim();
+          if (!code) return;
+          SS.post("/admin/api/2fa/enable", { code: code }).then(function () {
+            m.remove(); load2fa(); SS.toast("2FA enabled.", "success");
+          }).catch(function (e) { SS.toast(e.message, "error"); });
+        };
+      }).catch(function (e) { SS.toast(e.message, "error"); });
+    }
+
+    function disable2fa() {
+      SS.confirm("Disable two-step verification?", function () {
+        SS.post("/admin/api/2fa/disable", {}).then(function () {
+          load2fa(); SS.toast("2FA disabled.", "success");
+        }).catch(function (e) { SS.toast(e.message, "error"); });
+      });
+    }
+  </script>
+</body>
+</html>

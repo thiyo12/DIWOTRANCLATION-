@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bookings — Ssaaxcy Admin</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="../assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <script src="js/admin.js"></script>
+  <script>
+    var state = { status: "", mode: "", q: "", ref: new URLSearchParams(window.location.search).get("ref") || "" };
+    var ALL = [];
+
+    document.addEventListener("DOMContentLoaded", function () {
+      SS.guard().then(function (ok) {
+        if (!ok) return;
+        SS.shell("bookings", "Bookings", "Booking manager");
+        var c = document.getElementById("content");
+        c.innerHTML =
+          '<div class="toolbar">' +
+          '<select id="f-status"><option value="">All statuses</option><option>pending</option><option>confirmed</option><option>completed</option><option>cancelled</option></select>' +
+          '<select id="f-mode"><option value="">All modes</option><option value="video">Video</option><option value="on_site">On-site</option></select>' +
+          '<input type="search" id="f-q" placeholder="Search ref, name, email…">' +
+          '<button class="btn btn-dark btn-sm" id="btn-refresh">↻ Refresh</button>' +
+          '</div>' +
+          '<div class="card"><div class="table-wrap"><table class="tbl" id="tbl"></table></div></div>';
+
+        document.getElementById("f-status").addEventListener("change", function () { state.status = this.value; load(); });
+        document.getElementById("f-mode").addEventListener("change", function () { state.mode = this.value; load(); });
+        document.getElementById("f-q").addEventListener("keyup", function () { state.q = this.value; render(); });
+        document.getElementById("btn-refresh").addEventListener("click", load);
+        if (state.ref) document.getElementById("f-q").value = state.q = state.ref;
+
+        load();
+      });
+    });
+
+    function buildQuery() {
+      var p = [];
+      if (state.status) p.push("status=" + encodeURIComponent(state.status));
+      if (state.mode) p.push("mode=" + encodeURIComponent(state.mode));
+      return "/admin/api/bookings" + (p.length ? "?" + p.join("&") : "");
+    }
+
+    function load() {
+      SS.get(buildQuery()).then(function (d) {
+        ALL = d.bookings;
+        render();
+      }).catch(function (e) { SS.toast(e.message, "error"); });
+    }
+
+    function render() {
+      var list = ALL;
+      if (state.q) {
+        var q = state.q.toLowerCase();
+        list = list.filter(function (b) {
+          return (b.ref && b.ref.toLowerCase().indexOf(q) > -1) ||
+                 (b.customer && b.customer.toLowerCase().indexOf(q) > -1) ||
+                 (b.email && b.email.toLowerCase().indexOf(q) > -1) ||
+                 (b.service_name && b.service_name.toLowerCase().indexOf(q) > -1);
+        });
+      }
+      var t = document.getElementById("tbl");
+      if (!list.length) { t.innerHTML = '<tr><td class="empty">No bookings match your filters.</td></tr>'; return; }
+      var head = "<thead><tr><th>Ref</th><th>Date</th><th>Situation</th><th>Language</th><th>Mode</th><th>Customer</th><th>Total</th><th>Payment</th><th>Status</th><th></th></tr></thead>";
+      var rows = list.map(function (b) {
+        var hl = b.ref === state.ref ? ' style="background:#f6ead2;"' : "";
+        return "<tr" + hl + ">" +
+          "<td class='ref'>" + SS.txt(b.ref) + "</td>" +
+          "<td>" + SS.date(b.date) + "<br><span class='muted small'>" + SS.esc(b.time || "") + " · " + (b.duration || "") + " min</span></td>" +
+          "<td>" + SS.txt(b.service_name) + "</td>" +
+          "<td>" + SS.txt(b.language_name) + "</td>" +
+          "<td>" + (b.mode === "on_site" ? SS.icon("handshake", 14) + " On-site" : SS.icon("video", 14) + " Video") + "</td>" +
+          "<td>" + SS.txt(b.customer) + "</td>" +
+          "<td><b>" + SS.fmt(b.total) + "</b></td>" +
+          "<td>" + SS.txt(b.method || "card").toUpperCase() + "</td>" +
+          "<td>" + SS.badge(b.status) + "</td>" +
+          "<td><button class='icon-btn' onclick='viewBooking(" + b.id + ")'>" + SS.icon("file", 14) + " View</button></td>" +
+          "</tr>";
+      }).join("");
+      t.innerHTML = head + rows;
+    }
+
+    window.viewBooking = function (id) {
+      var b = null;
+      ALL.forEach(function (x) { if (x.id === id) b = x; });
+      if (!b) { SS.toast("Booking not found.", "error"); return; }
+
+      var modalHtml =
+        '<h2>Booking ' + SS.esc(b.ref) + '</h2>' +
+        '<div id="detail-box">' + detailHTML(b) + '</div>' +
+        '<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px;">' +
+        '<div class="flex mb"><label class="small" style="font-weight:800;min-width:70px;">Status</label>' +
+        '<select id="mv-status" class="input" style="flex:1;">' +
+          ["pending", "confirmed", "completed", "cancelled"].map(function (s) { return '<option' + (b.status === s ? " selected" : "") + '>' + s + '</option>'; }).join("") +
+        '</select>' +
+        '<button class="btn btn-dark btn-sm" id="mv-save">Save</button>' +
+        '<button class="btn btn-light btn-sm danger" id="mv-del">Delete</button></div>' +
+        '</div>' +
+        '<button class="btn btn-light btn-sm" id="mv-edit" style="margin-top:4px;">' + SS.icon("edit", 14) + " Edit details</button>' +
+        '<div id="edit-box" class="hidden mt"></div>';
+
+      var m = SS.modal(modalHtml);
+
+      m.querySelector("#mv-save").onclick = function () {
+        SS.patch("/admin/api/bookings/" + id, { status: m.querySelector("#mv-status").value }).then(function () {
+          m.remove(); load(); SS.toast("Status updated.", "success");
+        }).catch(function (e) { SS.toast(e.message, "error"); });
+      };
+      m.querySelector("#mv-del").onclick = function () {
+        SS.confirm("Delete booking " + b.ref + "? This cannot be undone.", function () {
+          SS.del("/admin/api/bookings/" + id).then(function () { m.remove(); load(); SS.toast("Booking deleted.", "success"); });
+        });
+      };
+      m.querySelector("#mv-edit").onclick = function () {
+        var box = document.getElementById("edit-box");
+        if (box.innerHTML) { box.classList.toggle("hidden"); return; }
+        box.classList.remove("hidden");
+        box.innerHTML =
+          '<div class="grid-2">' +
+          '<div class="field"><label>Date</label><input class="input" id="e-date" value="' + SS.esc(b.date || "") + '"></div>' +
+          '<div class="field"><label>Time</label><input class="input" id="e-time" value="' + SS.esc(b.time || "") + '"></div>' +
+          '<div class="field"><label>Customer</label><input class="input" id="e-customer" value="' + SS.esc(b.customer || "") + '"></div>' +
+          '<div class="field"><label>Email</label><input class="input" id="e-email" value="' + SS.esc(b.email || "") + '"></div>' +
+          '</div>' +
+          '<div class="field mt"><label>Address</label><input class="input" id="e-address" value="' + SS.esc(b.address || "") + '"></div>' +
+          '<div class="two-col"><div class="field"><label>Phone</label><input class="input" id="e-phone" value="' + SS.esc(b.phone || "") + '"></div>' +
+          '<div class="field" style="margin-left:9px;"><label>Method</label><select class="input" id="e-method">' +
+          '<option>card</option><option>twint</option><option>receipt</option><option>invoice</option></select></div></div>' +
+          '<div class="field mt"><label>Notes</label><textarea class="input" id="e-notes" style="width:100%;resize:vertical;">' + SS.esc(b.notes || "") + '</textarea></div>' +
+          '<button class="btn btn-red btn-sm" id="e-save" style="margin-top:6px;">Save changes</button>';
+        var methodSel = box.querySelector("#e-method");
+        ["card", "twint", "receipt", "invoice"].forEach(function (mm) {
+          if (b.method === mm) methodSel.value = mm;
+        });
+        box.querySelector("#e-save").onclick = function () {
+          SS.patch("/admin/api/bookings/" + id, {
+            date: box.querySelector("#e-date").value,
+            time: box.querySelector("#e-time").value,
+            customer: box.querySelector("#e-customer").value,
+            email: box.querySelector("#e-email").value,
+            phone: box.querySelector("#e-phone").value,
+            address: box.querySelector("#e-address").value,
+            notes: box.querySelector("#e-notes").value
+          }).then(function () {
+            m.remove(); load(); SS.toast("Booking details saved.", "success");
+          }).catch(function (e) { SS.toast(e.message, "error"); });
+        };
+      };
+    };
+
+    function detailHTML(b) {
+      var rows = [
+        ["Ref", b.ref], ["Situation", b.service_name], ["Language", b.language_name],
+        ["Date", SS.date(b.date)], ["Time", (b.time || "") + " · " + (b.duration || "") + " min"],
+        ["Mode", b.mode === "on_site" ? "On-site" : "Video call"],
+        ["Location", b.address], ["Customer", b.customer], ["Email", b.email], ["Phone", b.phone],
+        ["Base price", SS.fmt(b.base_price) + " /h"], ["Interpreting", SS.fmt(b.duration_price)],
+        ["Travel fee", SS.fmt(b.fee)], ["Total", SS.fmt(b.total)],
+        ["Payment method", b.method], ["Status", b.status], ["Notes", b.notes], ["Booked", SS.when(b.created_at)]
+      ];
+      return rows.map(function (r) {
+        return '<div class="detail-row"><span>' + SS.esc(r[0]) + '</span><b>' + SS.esc(r[1] && r[1] !== "" ? r[1] : "—") + '</b></div>';
+      }).join("");
+    }
+  </script>
+</body>
+</html>

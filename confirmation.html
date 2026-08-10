@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ssaaxcy Solutions — Booking confirmed</title>
+  <meta name="description" content="Your appointment is confirmed. See your summary and reference number.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="assets/brand/favicon.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="site-header" data-slot="header">
+    <div class="container header-inner"></div>
+  </header>
+
+  <section class="section">
+    <div class="confirm-wrap">
+      <div class="confirm-badge"><svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+      <span class="eyebrow" style="justify-content:center;" data-i18n="confirm.eyebrow"></span>
+      <h1 class="section-title" style="font-size:1.9rem;" data-i18n="confirm.title"></h1>
+      <p class="muted" id="sub-text" data-i18n="confirm.subtitle"></p>
+      <div class="ref-pill" id="ref-pill">…</div>
+      <div class="card detail-table" id="detail-table"></div>
+      <div class="priority-note" style="margin-top:20px;text-align:left;">
+        <span style="color:var(--champagne);">✦</span>
+        <span id="mode-note"></span>
+      </div>
+      <div class="hero-actions" style="justify-content:center;margin-top:30px;">
+        <a class="btn btn-primary" href="booking.html" data-i18n="confirm.bookAnother"></a>
+        <a class="btn btn-light" href="concierge.html" data-i18n="nav.concierge"></a>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer" data-slot="footer"></footer>
+
+  <script src="js/icons.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/main.js"></script>
+  <script>
+    SSX.injectLangSwitcher(document);
+
+    function findLocal(ref) {
+      var list = SSX.bookingsLocal();
+      for (var i = 0; i < list.length; i++) if (list[i].ref === ref) return list[i];
+      return null;
+    }
+
+    function loadBooking(ref, cb) {
+      if (SSX.http) {
+        var path = ref.indexOf("SSXD") === 0 ? "/api/documents/" : "/api/bookings/";
+        SSX.request("GET", path + encodeURIComponent(ref))
+          .then(function (res) { cb(res.booking || res.request, ref.indexOf("SSXD") === 0); })
+          .catch(function () { cb(findLocal(ref), false); });
+      } else {
+        setTimeout(function () { cb(findLocal(ref), false); }, 50);
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      var ref = new URLSearchParams(window.location.search).get("ref");
+      var isDoc = new URLSearchParams(window.location.search).get("kind") === "document" || (ref && ref.indexOf("SSXD") === 0);
+      if (!ref) ref = SSX.loadLocal(isDoc ? "ssx.lastDocRef" : "ssx.lastRef");
+      if (!ref) { window.location.href = isDoc ? "fillform.html" : "booking.html"; return; }
+
+      document.getElementById("ref-pill").textContent = ref;
+
+      loadBooking(ref, function (b, doc) {
+        var table = document.getElementById("detail-table");
+        if (!b) {
+          table.innerHTML = '<div style="padding:26px;text-align:center;" class="muted">' + SSX.t("confirm.notFound") + '</div>';
+          return;
+        }
+        function row(label, value) {
+          var d = document.createElement("div");
+          d.className = "row";
+          d.innerHTML = '<span>' + label + '</span><b>' + SSX.helpers.esc(value) + '</b>';
+          table.appendChild(d);
+        }
+        row(SSX.t("confirm.ref"), b.ref || ref);
+        if (doc) {
+          row(SSX.t("fill.docTypeLabel"), b.doc_type_name || b.doc_type || "—");
+          row(SSX.t("booking.languageLabel"), (b.from_lang || "—") + " → " + (b.to_lang || "—"));
+          row(SSX.t("fill.mode"), b.mode === "translate" ? SSX.t("fill.modeTranslate") : b.mode === "both" ? SSX.t("fill.modeBoth") : SSX.t("fill.modeFill"));
+          row(SSX.t("booking.email"), b.email || "—");
+          row(SSX.t("confirm.status"), b.status === "received" ? SSX.t("confirm.statusPending") : SSX.t("confirm.statusConfirmed"));
+          document.getElementById("mode-note").textContent = SSX.t("fill.emailNote");
+        } else {
+          row(SSX.t("booking.serviceLabel"), b.service_name || SSX.t("interpreting.rate"));
+          row(SSX.t("booking.languageLabel"), b.language_name || "—");
+          row(SSX.t("booking.dateLabel"), SSX.helpers.dateLabel(b.date));
+          row(SSX.t("booking.timeLabel"), (b.time || "—") + (b.duration ? " · " + b.duration + " min" : ""));
+          row(SSX.t("booking.modeLabel"), b.mode === "on_site" ? SSX.t("common.inPerson") : SSX.t("common.video"));
+          if (b.mode === "on_site" && b.address) row(SSX.t("field.address"), b.address);
+          row(SSX.t("booking.total"), SSX.helpers.fmt(b.total));
+          row(SSX.t("booking.payLabel"), String(b.method || "card").toUpperCase());
+          row(SSX.t("confirm.status"), b.status === "confirmed" ? SSX.t("confirm.statusConfirmed") : SSX.t("confirm.statusPending"));
+          document.getElementById("mode-note").textContent = b.mode === "video"
+            ? SSX.t("confirm.videoNote")
+            : SSX.t("confirm.siteNote");
+        }
+      });
+    });
+  </script>
+</body>
+</html>

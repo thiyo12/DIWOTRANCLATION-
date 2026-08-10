@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Finance — Ssaaxcy Admin</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="../assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/admin.css">
+  <style>
+    @media print { body * { visibility: hidden; } #invoice, #invoice * { visibility: visible; } #invoice { position: fixed; inset: 0; background: #fff; padding: 30px; } }
+  </style>
+</head>
+<body>
+  <script src="js/admin.js"></script>
+  <script>
+    var ALL = [];
+
+    document.addEventListener("DOMContentLoaded", function () {
+      SS.guard().then(function (ok) {
+        if (!ok) return;
+        SS.shell("finance", "Finance", "Payments & invoices");
+        var c = document.getElementById("content");
+        c.innerHTML =
+          '<div class="stat-row" id="stats"></div>' +
+          '<div class="card"><div class="table-wrap"><table class="tbl" id="tbl"></table></div></div>';
+        load();
+      });
+    });
+
+    function load() {
+      SS.get("/admin/api/payments").then(function (d) {
+        ALL = d.items;
+        renderStats();
+        renderTable();
+      }).catch(function (e) { SS.toast(e.message, "error"); });
+    }
+
+    function renderStats() {
+      var paid = 0, refunded = 0, count = ALL.length;
+      ALL.forEach(function (p) { if (p.status === "paid") paid += Number(p.amount) || 0; else refunded += Number(p.amount) || 0; });
+      document.getElementById("stats").innerHTML =
+        '<div class="stat-card"><div class="label">💶 Total paid</div><div class="value">' + SS.fmt(paid) + '</div></div>' +
+        '<div class="stat-card"><div class="label">↩ Refunded</div><div class="value">' + SS.fmt(refunded) + '</div></div>' +
+        '<div class="stat-card"><div class="label">Transactions</div><div class="value">' + ALL.length + '</div></div>';
+    }
+
+    function renderTable() {
+      var t = document.getElementById("tbl");
+      if (!ALL.length) { t.innerHTML = '<tr><td class="empty">No payments recorded yet — they appear when customers book.</td></tr>'; return; }
+      var head = "<thead><tr><th>ID</th><th>Booking ref</th><th>Method</th><th>Amount</th><th>Status</th><th>Date</th><th></th></tr></thead>";
+      var rows = ALL.map(function (p) {
+        return "<tr>" +
+          "<td class='muted small'>#" + p.id + "</td>" +
+          "<td class='ref'>" + SS.txt(p.ref) + "</td>" +
+          "<td>" + SS.txt(p.method || "").toUpperCase() + "</td>" +
+          "<td><b>" + SS.fmt(p.amount) + "</b></td>" +
+          "<td>" + SS.badge(p.status) + "</td>" +
+          "<td>" + SS.when(p.created_at) + "</td>" +
+          "<td><button class='icon-btn' onclick='invoiceModal(" + p.id + ")'>🧾</button>" +
+          (p.status === "paid" ? " <button class='icon-btn danger' onclick='refund(" + p.id + ")'>Refund</button>" : "") +
+          "</td></tr>";
+      }).join("");
+      t.innerHTML = head + rows;
+    }
+
+    window.invoiceModal = function (id) {
+      var p = null;
+      ALL.forEach(function (x) { if (x.id === id) p = x; });
+      if (!p) return;
+      var billing = {
+        brand: "Ssaaxcy Solutions GmbH",
+        address: "Limmatstrasse 12 · 8005 Zürich · Switzerland",
+        uid: "CHE-123.456.789"
+      };
+      var m = SS.modal(
+        '<div class="flex between"><div><b>Ssaaxcy Solutions</b><br><span class="small muted">' + billing.address + '</span><br><span class="small muted">UID ' + billing.uid + '</span></div>' +
+        '<div style="text-align:right"><small class="muted">INVOICE</small><div id="invoice-ref" class="ref" style="font-size:1.1rem;">' + SS.esc(p.ref) + '</div><small class="muted">' + SS.when(p.created_at) + '</small></div></div>' +
+        '<div class="card card-pad mt"><div class="detail-row"><span>Booking reference</span><b>' + SS.esc(p.ref) + '</b></div>' +
+        '<div class="detail-row"><span>Payment method</span><b>' + SS.esc(p.method || "").toUpperCase() + '</b></div>' +
+        '<div class="detail-row"><span>Amount</span><b>' + SS.fmt(p.amount) + '</b></div>' +
+        '<div class="detail-row"><span>Status</span><b>' + SS.badge(p.status) + '</b></div></div>' +
+        '<div class="flex mt"><button class="btn btn-dark btn-sm" onclick="window.print()">🖨 Print / PDF</button>' +
+        '<button class="btn btn-light btn-sm" onclick="this.closest(\'.modal-backdrop\').remove()">Close</button></div>'
+      );
+    };
+
+    window.refund = function (id) {
+      var p = null;
+      ALL.forEach(function (x) { if (x.id === id) p = x; });
+      SS.confirm("Mark payment " + (p ? p.ref : "") + " as refunded?", function () {
+        SS.patch("/admin/api/payments/" + id, { status: "refunded" }).then(function () {
+          load(); SS.toast("Payment marked as refunded.", "success");
+        }).catch(function (e) { SS.toast(e.message, "error"); });
+      });
+    };
+  </script>
+</body>
+</html>

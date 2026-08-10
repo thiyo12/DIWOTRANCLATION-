@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin login — Ssaaxcy Solutions</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="../assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body class="login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <span class="mark">SS</span>
+      <span><b>Ssaaxcy Solutions</b><small>Admin panel</small></span>
+    </div>
+    <h1>Sign in</h1>
+    <p>Restricted area — enter the admin password.</p>
+    <form id="login-form" novalidate>
+      <div class="field" id="pw-wrap">
+        <label>Password</label>
+        <input type="password" class="input" id="pw" autofocus autocomplete="current-password">
+      </div>
+      <div class="field" id="code-wrap" style="display:none;">
+        <label>Verification code</label>
+        <input type="text" class="input" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000 000">
+      </div>
+      <button type="submit" class="btn btn-red btn-block" id="btn">Sign in →</button>
+      <div class="error" id="error"></div>
+    </form>
+    <p class="muted small" style="margin-top:18px;"><a href="/" class="link">← Back to website</a></p>
+  </div>
+
+  <script src="js/admin.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      var form = document.getElementById("login-form");
+      var pw = document.getElementById("pw");
+      var pwWrap = document.getElementById("pw-wrap");
+      var codeWrap = document.getElementById("code-wrap");
+      var code = document.getElementById("code");
+      var btn = document.getElementById("btn");
+      var err = document.getElementById("error");
+
+      var need2fa = false;
+
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        btn.disabled = true;
+        err.textContent = "";
+        var body = need2fa ? { code: code.value } : { password: pw.value };
+        var url = need2fa ? "/admin/api/login2fa" : "/admin/api/login";
+        btn.textContent = need2fa ? "Verifying…" : "Signing in…";
+        fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify(body)
+        }).then(function (res) {
+          return res.json().then(function (j) { return { res: res, j: j }; });
+        }).then(function (r) {
+          if (!r.res.ok || !r.j.ok) {
+            err.textContent = need2fa ? "Wrong code. Try again." : "Wrong password. Try again.";
+            btn.disabled = false;
+            btn.textContent = need2fa ? "Verify →" : "Sign in →";
+            return;
+          }
+          if (r.j.csrf) SS.csrf = r.j.csrf;
+          if (r.j.need2fa) {
+            need2fa = true;
+            pw.disabled = true;
+            pwWrap.classList.add("fade-out");
+            codeWrap.style.display = "block";
+            code.focus();
+            btn.textContent = "Verify →";
+            btn.disabled = false;
+            err.textContent = "Two-step verification: enter the 6-digit code from your authenticator app.";
+            return;
+          }
+          window.location.href = "/admin/dashboard.html";
+        }).catch(function () {
+          err.textContent = "Server unreachable. Is the backend running?";
+          btn.disabled = false;
+          btn.textContent = need2fa ? "Verify →" : "Sign in →";
+        });
+      });
+    });
+  </script>
+</body>
+</html>
