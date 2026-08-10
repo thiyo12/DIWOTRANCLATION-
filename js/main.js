@@ -52,19 +52,33 @@ SSX.settings = {
   facebook: "",
   linkedin: "",
   flagStyle: "drift",
-  heroImage: ""
+  heroImage: "",
+  cantonSurcharge: 0,
+  docPlainWord: 0.15,
+  docCertWord: 0.2,
+  docUrgentPct: 50,
+  videoPrice: 60
 };
 
 SSX.applySettings = function (s) {
   if (!s) return;
   var map = {
     brand_name: "brandName", support_email: "supportEmail", support_phone: "supportPhone",
-    travel_fee: "travelFee", hero_image_url: "heroImage", flag_style: "flagStyle"
+    travel_fee: "travelFee", hero_image_url: "heroImage", flag_style: "flagStyle",
+    canton_surcharge: "cantonSurcharge", doc_plain_word: "docPlainWord",
+    doc_cert_word: "docCertWord", doc_urgent_pct: "docUrgentPct", video_price: "videoPrice"
   };
   Object.keys(map).forEach(function (k) { if (s[k] !== undefined && s[k] !== null) SSX.settings[map[k]] = s[k]; });
   ["whatsapp", "instagram", "facebook", "linkedin", "currency"].forEach(function (k) {
     if (s[k] !== undefined && s[k] !== null) SSX.settings[k] = s[k];
   });
+};
+
+SSX.cantonOptions = function (selected) {
+  const cantons = ["Zurich", "Aargau", "Appenzell Ausserrhoden", "Appenzell Innerrhoden", "Basel-Landschaft", "Basel-Stadt", "Bern", "Fribourg", "Geneva", "Glarus", "Graubünden", "Jura", "Lucerne", "Neuchâtel", "Nidwalden", "Obwalden", "Schaffhausen", "Schwyz", "Solothurn", "St. Gallen", "Thurgau", "Ticino", "Uri", "Valais", "Vaud", "Zug"];
+  return cantons.map(function (c) {
+    return '<option value="' + c + '"' + (c === (selected || "Zurich") ? " selected" : "") + ">" + c + "</option>";
+  }).join("");
 };
 
 SSX.fmt = function (n) {
@@ -280,6 +294,9 @@ SSX.renderShell = function () {
     if (hv) hv.innerHTML = '<img class="hero-photo" src="' + SSX.helpers.esc(SSX.settings.heroImage) + '" alt="Ssaaxcy Solutions">';
   }
 
+  SSX.renderFeatured();
+  SSX.fillFees();
+
   const burger = document.querySelector(".nav-burger");
   const nav = document.querySelector(".main-nav");
   if (burger && nav) {
@@ -297,4 +314,39 @@ SSX.renderShell = function () {
     });
   });
   document.querySelectorAll(".year").forEach(function (el) { el.textContent = new Date().getFullYear(); });
+};
+
+SSX.renderFeatured = function () {
+  const el = document.getElementById("home-featured");
+  if (!el) return;
+  const sur = Number(SSX.settings.cantonSurcharge) || 0;
+  const note = SSX.t("svc.cantonNote").replace("X%", sur + "%");
+  const fmt = SSX.helpers.fmt;
+  el.innerHTML =
+    '<a class="feature-card" href="booking.html">' +
+      '<span class="feature-icon feature-icon--red">' + SSX.icon("video", 26) + "</span>" +
+      "<div><h3>" + SSX.t("svc.videoTitle") + "</h3>" +
+      "<p>" + SSX.t("svc.videoDesc") + "</p></div>" +
+      '<div class="feature-price">' + fmt(SSX.settings.videoPrice) + "<small>" + SSX.t("svc.videoUnit") + "</small></div>" +
+      '<span class="feature-note">' + note + "</span>" +
+      '<span class="feature-cta">' + SSX.t("svc.videoCta") + " →</span>" +
+    "</a>" +
+    '<a class="feature-card feature-card--gold" href="fillform.html">' +
+      '<span class="feature-icon feature-icon--gold">' + SSX.icon("file", 26) + "</span>" +
+      "<div><h3>" + SSX.t("svc.docTitle") + "</h3>" +
+      "<p>" + SSX.t("svc.docDesc") + "</p></div>" +
+      '<div class="feature-price">' + SSX.t("svc.docFrom") + " " + (Number(SSX.settings.docPlainWord) || 0).toFixed(2) + "<small> / word</small></div>" +
+      '<span class="feature-note">' + note + "</span>" +
+      '<span class="feature-cta">' + SSX.t("svc.docCta") + " →</span>" +
+    "</a>";
+};
+
+SSX.fillFees = function () {
+  const plain = document.getElementById("fee-plain");
+  if (!plain) return;
+  const cert = document.getElementById("fee-cert");
+  const urgent = document.getElementById("fee-urgent");
+  plain.innerHTML = "CHF " + (Number(SSX.settings.docPlainWord) || 0).toFixed(2) + " <small data-i18n=\"fee.perWord\">" + SSX.t("fee.perWord") + "</small>";
+  if (cert) cert.innerHTML = "CHF " + (Number(SSX.settings.docCertWord) || 0).toFixed(2) + " <small data-i18n=\"fee.perWord\">" + SSX.t("fee.perWord") + "</small>";
+  if (urgent) urgent.innerHTML = "+ " + (Number(SSX.settings.docUrgentPct) || 0) + "%<small>" + SSX.t("fee.urShort") + "</small>";
 };

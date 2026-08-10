@@ -38,7 +38,12 @@
           '<div class="card card-pad" style="margin-top:18px;"><h3>' + SS.icon("edit", 16) + '&nbsp;Settings</h3>' +
           '<div class="field"><label>Brand name</label><input class="input" id="s-brand" value=""></div>' +
           '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Travel fee (CHF)</label><input class="input" id="s-fee" type="number" value=""></div>' +
-          '<div class="field"><label>Support email</label><input class="input" id="s-email" value=""></div></div>' +
+          '<div class="field"><label>Canton surcharge — outside Zürich (%)</label><input class="input" id="s-canton" type="number" step="0.5" value=""><small class="muted">0 = same price everywhere. Applies to all services.</small></div></div>' +
+          '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Video translation (CHF/hour)</label><input class="input" id="s-video" type="number" step="1" value=""></div>' +
+          '<div class="field"><label>Plain translation (CHF/word)</label><input class="input" id="s-plain" type="number" step="0.01" value=""></div></div>' +
+          '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Certified translation (CHF/word)</label><input class="input" id="s-cert" type="number" step="0.01" value=""></div>' +
+          '<div class="field"><label>Urgent surcharge (%)</label><input class="input" id="s-urgent" type="number" step="1" value=""></div></div>' +
+          '<div class="field"><label>Support email</label><input class="input" id="s-email" value=""></div>' +
           '<div class="field"><label>Support phone</label><input class="input" id="s-phone" value=""></div>' +
           '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>WhatsApp</label><input class="input" id="s-wa" placeholder="+41 79 000 00 00" value=""></div>' +
           '<div class="field"><label>Instagram URL</label><input class="input" id="s-ig" placeholder="https://instagram.com/…" value=""></div></div>' +
@@ -214,6 +219,11 @@
     function renderSettings() {
       document.getElementById("s-brand").value = CAT.settings.brand_name || "";
       document.getElementById("s-fee").value = CAT.settings.travel_fee || "25";
+      document.getElementById("s-canton").value = CAT.settings.canton_surcharge || "0";
+      document.getElementById("s-video").value = CAT.settings.video_price || "60";
+      document.getElementById("s-plain").value = CAT.settings.doc_plain_word || "0.15";
+      document.getElementById("s-cert").value = CAT.settings.doc_cert_word || "0.20";
+      document.getElementById("s-urgent").value = CAT.settings.doc_urgent_pct || "50";
       document.getElementById("s-email").value = CAT.settings.support_email || "";
       document.getElementById("s-phone").value = CAT.settings.support_phone || "";
       document.getElementById("s-wa").value = CAT.settings.whatsapp || "";
@@ -228,6 +238,11 @@
       var body = {
         brand_name: document.getElementById("s-brand").value,
         travel_fee: document.getElementById("s-fee").value,
+        canton_surcharge: document.getElementById("s-canton").value,
+        video_price: document.getElementById("s-video").value,
+        doc_plain_word: document.getElementById("s-plain").value,
+        doc_cert_word: document.getElementById("s-cert").value,
+        doc_urgent_pct: document.getElementById("s-urgent").value,
         support_email: document.getElementById("s-email").value,
         support_phone: document.getElementById("s-phone").value,
         whatsapp: document.getElementById("s-wa").value,

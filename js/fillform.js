@@ -12,6 +12,7 @@
     email: "",
     phone: "",
     notes: "",
+    canton: "Zurich",
     submitting: false
   };
 
@@ -211,6 +212,9 @@
           '<div class="field"><input class="input" id="d-phone" placeholder="' + t("booking.phone") + '" value="' + SSX.helpers.esc(state.phone) + '"></div>' +
         '</div>' +
       '</div>' +
+      '<div class="field"><label>' + t("fill.canton") + '</label>' +
+        '<select class="input" id="d-canton">' + SSX.cantonOptions(state.canton) + '</select></div>' +
+      '<p class="tiny muted" style="margin-top:4px;">' + t("fill.ratesNote") + ' <span id="d-canton-note" class="canton-note"></span></p>' +
       '<div class="field"><label>' + t("fill.note") + '</label><textarea class="textarea" id="d-notes" placeholder="' + t("fill.notePh") + '">' + SSX.helpers.esc(state.notes) + '</textarea></div>' +
       '<input type="text" name="website" id="d-website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">' +
       '<p class="tiny muted" style="margin-top:6px;">' + SSX.icon("file") + ' ' + t("fill.emailNote") + '</p>';
@@ -220,6 +224,18 @@
       x.addEventListener("input", function () { state[key] = x.value; });
     }
     bind("#d-fields", "fields");
+    bind("#d-name", "customer");
+    bind("#d-email", "email");
+    bind("#d-phone", "phone");
+    bind("#d-notes", "notes");
+    var cant = c.querySelector("#d-canton");
+    if (cant) {
+      cant.addEventListener("change", function () {
+        state.canton = cant.value;
+        var n = document.getElementById("d-canton-note");
+        if (n) n.textContent = state.canton && state.canton !== "Zurich" ? "· " + t("svc.cantonNote").replace("X%", (Number(SSX.settings.cantonSurcharge) || 0) + "%") : "";
+      });
+    }
     bind("#d-name", "customer");
     bind("#d-email", "email");
     bind("#d-phone", "phone");
@@ -284,6 +300,7 @@
         to_lang: state.toLang,
         mode: state.mode,
         fields: state.fields.trim() ? state.fields : null,
+        canton: state.canton,
         notes: state.notes,
         website: document.getElementById("d-website") ? document.getElementById("d-website").value : ""
       }).then(function (res) {

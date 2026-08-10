@@ -10,6 +10,7 @@
     duration: 60,
     mode: "",
     address: "",
+    canton: "Zurich",
     customer: "",
     email: "",
     phone: "",
@@ -69,8 +70,10 @@
     var base = state.service ? state.service.price : 0;
     var dur = durationFor(state.duration || 60);
     var durPrice = Math.round(base * dur.factor * 100) / 100;
-    var fee = state.mode === "on_site" ? SSX.settings.travelFee : 0;
-    return { base: base, durPrice: durPrice, fee: fee, total: Math.round((durPrice + fee) * 100) / 100 };
+    var sur = Number(SSX.settings.cantonSurcharge) || 0;
+    var surcharge = state.canton && state.canton !== "Zurich" ? Math.round(durPrice * sur / 100 * 100) / 100 : 0;
+    var fee = (state.mode === "on_site" ? SSX.settings.travelFee : 0) + surcharge;
+    return { base: base, durPrice: durPrice, fee: fee, surcharge: surcharge, total: Math.round((durPrice + fee) * 100) / 100 };
   }
 
   function svcName(id) { return SSX.t("svc." + id + ".name"); }
@@ -279,6 +282,9 @@
         '</button>' +
       '</div>' +
       '<div id="addr-wrap"></div>' +
+      '<div class="field"><label>' + t("booking.canton") + '</label>' +
+        '<select class="input" id="b-canton">' + SSX.cantonOptions(state.canton) + '</select>' +
+        '<small class="muted">' + t("booking.cantonHint") + '</small></div>' +
       '<div class="field" style="margin-top:22px;"><label>' + t("booking.contact") + '</label>' +
         '<div class="two-col">' +
           '<div class="field"><input class="input" id="b-name" placeholder="' + t("booking.firstName") + ' · ' + t("booking.lastName") + '" value="' + SSX.helpers.esc(state.customer) + '"></div>' +
@@ -317,6 +323,9 @@
       var addr = c.querySelector("#b-address");
       if (addr) addr.addEventListener("input", function () { state.address = addr.value; });
     }
+
+    var cantSel = c.querySelector("#b-canton");
+    if (cantSel) cantSel.addEventListener("change", function () { state.canton = cantSel.value; renderSummary(); });
 
     function toggle(m) {
       state.mode = m;
@@ -381,7 +390,8 @@
     if (state.mode) line(t("booking.modeLabel"), state.mode === "video" ? t("common.video") : t("common.inPerson"));
     var c = calc();
     line(t("interpreting.rate") + " · " + durationFor(state.duration).label, money(c.durPrice));
-    if (c.fee) line(t("booking.travel"), money(c.fee));
+    if (c.surcharge) line(t("summary.cantonFee") + " (" + state.canton + ")", money(c.surcharge));
+    if (c.fee - c.surcharge) line(t("booking.travel"), money(c.fee - c.surcharge));
     var total = document.createElement("div");
     total.className = "sum-total";
     total.innerHTML = '<span>' + t("booking.total") + '</span><b>' + money(c.total) + '</b>';
@@ -449,6 +459,7 @@
         duration: state.duration,
         mode: state.mode,
         address: state.address,
+        canton: state.canton,
         customer: state.customer,
         email: state.email,
         phone: state.phone,

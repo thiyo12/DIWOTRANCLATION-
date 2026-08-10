@@ -523,9 +523,14 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
   if (!service || !lang) return res.status(400).json({ ok: false, error: "Invalid service or language." });
 
   const travelFee = NumberSetting("travel_fee");
-  const fee = b.mode === "on_site" ? travelFee : 0;
+  const canton = String(b.canton || "").trim();
+  const cantonSurcharge = NumberSetting("canton_surcharge");
   const base = b.service_price != null ? Number(b.service_price) : service.price;
   const durationPrice = Math.round(base * (dur ? dur.factor : 1) * 100) / 100;
+  const surcharge = canton && canton !== "Zurich"
+    ? Math.round(100 * (durationPrice * (cantonSurcharge / 100))) / 100
+    : 0;
+  const fee = (b.mode === "on_site" ? travelFee : 0) + surcharge;
   const total = Math.round(100 * (durationPrice + fee)) / 100;
 
   const ref = genRef(loadSetting("ref_prefix", "SSX"));
@@ -534,13 +539,13 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
   run(
     `INSERT INTO bookings
      (ref, language_code, language_name, service_id, service_name, date, time, duration,
-      mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status, canton)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       ref, lang.code, lang.name, service.id, service.name, b.date, b.time, dur.mins,
       b.mode, String(b.address || "").slice(0, 240), String(b.customer || "").slice(0, 120),
       String(b.email || "").slice(0, 160), String(b.phone || "").slice(0, 40), String(b.notes || "").slice(0, 2000),
-      base, durationPrice, fee, total, method, "pending"
+      base, durationPrice, fee, total, method, "pending", canton.slice(0, 60)
     ]
   );
   run("INSERT INTO payments (ref, method, amount, status) VALUES (?,?,?,?)", [ref, method, total, "paid"]);
@@ -555,7 +560,7 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
   res.json({
     ok: true, ref, language: lang.name, service: service.name, date: b.date, time: b.time,
     mode: b.mode, duration: dur ? dur.mins : 60, base_price: base, duration_price: durationPrice,
-    fee, total, method, status: "pending"
+    fee, surcharge, canton, total, method, status: "pending"
   });
 });
 
@@ -749,7 +754,8 @@ app.patch("/admin/api/settings", requireAdmin, (req, res) => {
   Object.keys(b).forEach((k) => {
     if (["brand_name", "support_email", "support_phone", "whatsapp", "instagram", "facebook", "linkedin",
          "hero_image_url", "flag_style", "travel_fee", "currency", "ref_prefix", "smtp_host", "smtp_port",
-         "smtp_user", "smtp_pass", "smtp_from", "smtp_secure", "lockout_max", "lockout_minutes"].includes(k)) {
+         "smtp_user", "smtp_pass", "smtp_from", "smtp_secure", "lockout_max", "lockout_minutes",
+         "canton_surcharge", "doc_plain_word", "doc_cert_word", "doc_urgent_pct", "video_price"].includes(k)) {
       run("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", [k, String(b[k]).slice(0, 400)]);
     }
   });

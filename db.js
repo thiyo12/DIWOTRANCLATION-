@@ -45,6 +45,11 @@ const SEED_SETTINGS = [
   ["hero_image_url", ""],
   ["flag_style", "drift"],
   ["travel_fee", "25"],
+  ["canton_surcharge", "0"],
+  ["doc_plain_word", "0.15"],
+  ["doc_cert_word", "0.20"],
+  ["doc_urgent_pct", "50"],
+  ["video_price", "60"],
   ["currency", "CHF"],
   ["ref_prefix", "SSX"],
   ["admin_2fa", "0"]
@@ -98,7 +103,8 @@ function migrate() {
       date TEXT, time TEXT, duration INTEGER, mode TEXT, address TEXT,
       customer TEXT, email TEXT, phone TEXT, notes TEXT,
       base_price REAL DEFAULT 0, duration_price REAL DEFAULT 0, fee REAL DEFAULT 0, total REAL DEFAULT 0,
-      method TEXT, status TEXT DEFAULT 'pending', created_at TEXT DEFAULT (datetime('now'))
+      method TEXT, status TEXT DEFAULT 'pending', created_at TEXT DEFAULT (datetime('now')),
+      canton TEXT DEFAULT ''
     );
     CREATE TABLE IF NOT EXISTS payments (
       id INTEGER PRIMARY KEY AUTOINCREMENT, ref TEXT, method TEXT, amount REAL,
@@ -139,6 +145,10 @@ function migrate() {
       created_at TEXT DEFAULT (datetime('now'))
     );
   `);
+  const bCols = d.prepare("PRAGMA table_info(bookings)").all().map((c) => c.name);
+  if (!bCols.includes("canton")) {
+    d.exec("ALTER TABLE bookings ADD COLUMN canton TEXT DEFAULT ''");
+  }
 }
 
 const SEED_INTERPRETERS = [
