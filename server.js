@@ -64,6 +64,15 @@ app.use(express.json({ limit: "100kb", strict: true }));
 app.use(express.urlencoded({ extended: true, limit: "100kb" }));
 app.use(cookieParser());
 
+app.use((req, res, next) => {
+  if (/\.(js|css|html)$/i.test(req.path) || /^\/(api|admin\/api)\//.test(req.path)) {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+  }
+  next();
+});
+
 const loginRateLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,

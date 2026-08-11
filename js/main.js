@@ -285,7 +285,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
 SSX.boot = function () {
   SSX.request("GET", "/api/catalog")
-    .then(SSX.applyCatalog)
+    .then(function (j) {
+      SSX.applyCatalog(j);
+      document.dispatchEvent(new CustomEvent("ssx:settings", { detail: j }));
+    })
     .catch(function () {})
     .then(SSX.renderShell);
   SSX.pollCatalog();
