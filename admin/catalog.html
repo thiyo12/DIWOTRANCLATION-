@@ -43,6 +43,11 @@
           '<div class="field"><label>Plain translation (CHF/word)</label><input class="input" id="s-plain" type="number" step="0.01" value=""></div></div>' +
           '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Certified translation (CHF/word)</label><input class="input" id="s-cert" type="number" step="0.01" value=""></div>' +
           '<div class="field"><label>Urgent surcharge (%)</label><input class="input" id="s-urgent" type="number" step="1" value=""></div></div>' +
+          '<div class="field mt" style="border-top:1px solid var(--line);padding-top:12px;"><b class="small">Flat document rates (CHF per document)</b></div>' +
+          '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Forms / documents (flat)</label><input class="input" id="s-docflat" type="number" step="1" value=""></div>' +
+          '<div class="field"><label>Tax declaration (flat)</label><input class="input" id="s-doctax" type="number" step="1" value=""></div></div>' +
+          '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>Last-minute surcharge (+CHF)</label><input class="input" id="s-doclast" type="number" step="1" value=""></div>' +
+          '<div class="field"><label>Urgent surcharge (+CHF)</label><input class="input" id="s-docurg" type="number" step="1" value=""></div></div>' +
           '<div class="field"><label>Support email</label><input class="input" id="s-email" value=""></div>' +
           '<div class="field"><label>Support phone</label><input class="input" id="s-phone" value=""></div>' +
           '<div class="two-col mx"><div class="field" style="padding-right:9px;"><label>WhatsApp</label><input class="input" id="s-wa" placeholder="+41 79 000 00 00" value=""></div>' +
@@ -240,6 +245,10 @@
       document.getElementById("s-iban").value = CAT.settings.pay_iban || "";
       document.getElementById("s-hero").value = CAT.settings.hero_image_url || "";
       document.getElementById("s-flag").value = CAT.settings.flag_style || "drift";
+      document.getElementById("s-docflat").value = CAT.settings.doc_flat || "125";
+      document.getElementById("s-doctax").value = CAT.settings.doc_flat_tax || "120";
+      document.getElementById("s-doclast").value = CAT.settings.doc_last_minute || "25";
+      document.getElementById("s-docurg").value = CAT.settings.doc_urgent_flat || "15";
     }
 
     function saveSettings() {
@@ -262,7 +271,11 @@
         pay_bank_name: document.getElementById("s-bank").value,
         pay_iban: document.getElementById("s-iban").value,
         hero_image_url: document.getElementById("s-hero").value,
-        flag_style: document.getElementById("s-flag").value
+        flag_style: document.getElementById("s-flag").value,
+        doc_flat: document.getElementById("s-docflat").value,
+        doc_flat_tax: document.getElementById("s-doctax").value,
+        doc_last_minute: document.getElementById("s-doclast").value,
+        doc_urgent_flat: document.getElementById("s-docurg").value
       };
       SS.patch("/admin/api/settings", body).then(function () {
         load();

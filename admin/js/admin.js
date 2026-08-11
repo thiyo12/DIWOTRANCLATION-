@@ -128,6 +128,7 @@ SS.icon = function (name, size) {
 SS.menu = [
   { href: "dashboard.html", label: "Dashboard", icon: "dashboard", key: "dashboard" },
   { href: "bookings.html", label: "Bookings", icon: "calendar", key: "bookings" },
+  { href: "availability.html", label: "Availability", icon: "clock", key: "availability" },
   { href: "documents.html", label: "Documents", icon: "doc", key: "documents" },
   { href: "clients.html", label: "Clients", icon: "users", key: "clients" },
   { href: "concierge.html", label: "Life Concierge", icon: "concierge", key: "concierge" },
@@ -164,8 +165,30 @@ SS.shell = function (active, title, sub) {
 };
 
 SS.guard = function () {
-  return SS.get("/admin/api/me").then(function () { return true; }).catch(function () {
+  return SS.get("/admin/api/me").then(function (d) {
+    if (d.mustChange && !sessionStorage.getItem("ssx-pw-done")) SS.pwdModal();
+    return true;
+  }).catch(function () {
     window.location.href = "/admin/login.html";
     return false;
   });
+};
+
+SS.pwdModal = function () {
+  var m = SS.modal(
+    '<h2>Change your admin password</h2>' +
+    '<p class="muted small">A strong password is required before going live (at least 12 characters, letters and digits). Changing it signs you out everywhere.</p>' +
+    '<div class="field mt"><label>Current password</label><input class="input" type="password" id="pw-cur" autocomplete="current-password"></div>' +
+    '<div class="field"><label>New password</label><input class="input" type="password" id="pw-new" autocomplete="new-password"></div>' +
+    '<button class="btn btn-red btn-block" id="pw-go">Change password</button>'
+  );
+  m.querySelector("#pw-go").onclick = function () {
+    SS.post("/admin/api/password", {
+      current: m.querySelector("#pw-cur").value,
+      next: m.querySelector("#pw-new").value
+    }).then(function () {
+      sessionStorage.setItem("ssx-pw-done", "1");
+      window.location.href = "/admin/login.html";
+    }).catch(function (e) { SS.toast(e.message, "error"); });
+  };
 };

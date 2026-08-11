@@ -55,7 +55,24 @@ const SEED_SETTINGS = [
   ["pay_bank_name", "Ssaaxcy Solutions GmbH"],
   ["currency", "CHF"],
   ["ref_prefix", "SSX"],
-  ["admin_2fa", "0"]
+  ["admin_2fa", "0"],
+  // capacity system
+  ["work_start", "08:30"],
+  ["work_end", "16:30"],
+  ["work_days", "1,2,3,4,5,6"],
+  ["lead_days", "2"],
+  ["visit_buffer_min", "60"],
+  ["video_buffer_min", "15"],
+  ["pause_bookings", "0"],
+  // document flat pricing (CHF)
+  ["doc_flat", "125"],
+  ["doc_flat_tax", "120"],
+  ["doc_last_minute", "25"],
+  ["doc_urgent_flat", "15"],
+  // privacy
+  ["retention_months", "24"],
+  ["privacy_version", "1"],
+  ["admin_pw_changed", "0"]
 ];
 
 const SEED_DOC_TYPES = [
@@ -147,11 +164,32 @@ function migrate() {
       ip TEXT PRIMARY KEY, reason TEXT, until TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS availability_overrides (
+      date TEXT PRIMARY KEY, reason TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
   const bCols = d.prepare("PRAGMA table_info(bookings)").all().map((c) => c.name);
   if (!bCols.includes("canton")) {
     d.exec("ALTER TABLE bookings ADD COLUMN canton TEXT DEFAULT ''");
   }
+  if (!bCols.includes("cancel_reason")) {
+    d.exec("ALTER TABLE bookings ADD COLUMN cancel_reason TEXT DEFAULT ''");
+  }
+  if (!bCols.includes("consent")) {
+    d.exec("ALTER TABLE bookings ADD COLUMN consent INTEGER DEFAULT 0");
+  }
+  const sCols = d.prepare("PRAGMA table_info(sessions)").all().map((c) => c.name);
+  if (!sCols.includes("csrf_token")) d.exec("ALTER TABLE sessions ADD COLUMN csrf_token TEXT DEFAULT ''");
+  if (!sCols.includes("ua_hash")) d.exec("ALTER TABLE sessions ADD COLUMN ua_hash TEXT DEFAULT ''");
+  if (!sCols.includes("ip")) d.exec("ALTER TABLE sessions ADD COLUMN ip TEXT DEFAULT ''");
+  if (!sCols.includes("kind")) d.exec("ALTER TABLE sessions ADD COLUMN kind TEXT DEFAULT 'admin'");
+  const dCols = d.prepare("PRAGMA table_info(document_requests)").all().map((c) => c.name);
+  if (!dCols.includes("consent")) d.exec("ALTER TABLE document_requests ADD COLUMN consent INTEGER DEFAULT 0");
+  const cCols = d.prepare("PRAGMA table_info(concierge)").all().map((c) => c.name);
+  if (!cCols.includes("consent")) d.exec("ALTER TABLE concierge ADD COLUMN consent INTEGER DEFAULT 0");
+  const ins = d.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)");
+  SEED_SETTINGS.forEach(([k, v]) => ins.run(k, v));
 }
 
 const SEED_INTERPRETERS = [

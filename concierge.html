@@ -68,6 +68,8 @@
             <div class="field"><label data-i18n="cf.phone"></label><input class="input" id="c-phone" data-ph="ph.phone"></div>
           </div>
 
+          <label class="consent-line"><input type="checkbox" id="c-consent"> <span data-i18n="privacy.consent"></span> (<a href="privacy.html" target="_blank" rel="noopener" data-i18n="privacy.link"></a>)</label>
+
           <input type="text" name="company_website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
 
           <button type="submit" class="btn btn-primary btn-lg btn-block" id="c-submit" data-i18n="cf.send"></button>
@@ -169,6 +171,7 @@
       if (!detail) { SSX.toast(SSX.t("err.detail"), "error"); return; }
       if (!name) { SSX.toast(SSX.t("err.name"), "error"); return; }
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { SSX.toast(SSX.t("err.email"), "error"); return; }
+      if (!document.getElementById("c-consent").checked) { SSX.toast(SSX.t("privacy.consentRequired"), "error"); return; }
 
       var payload = {
         service: svcEl.getAttribute("data-svc"),
@@ -180,6 +183,7 @@
         email: email,
         phone: document.getElementById("c-phone").value.trim(),
         files: "",
+        consent: true,
         website: document.querySelector("#concierge-form .hp-field").value
       };
 

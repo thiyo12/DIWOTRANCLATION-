@@ -106,6 +106,12 @@
           stRow.className = "row";
           stRow.innerHTML = '<span>' + SSX.t("confirm.status") + '</span><b>' + statusLabel(b) + '</b>';
           table.appendChild(stRow);
+          if (payState(b) === "cancelled" && b.cancel_reason) {
+            var crRow = document.createElement("div");
+            crRow.className = "row";
+            crRow.innerHTML = '<span>' + SSX.t("confirm.cancelReason") + '</span><b>' + SSX.helpers.esc(b.cancel_reason) + '</b>';
+            table.appendChild(crRow);
+          }
           document.getElementById("mode-note").textContent = b.mode === "video"
             ? SSX.t("confirm.videoNote")
             : SSX.t("confirm.siteNote");
@@ -116,21 +122,33 @@
     });
 
     function payState(b) {
-      return b.pay_status || (b.status === "paid" ? "paid" : b.status === "refunded" ? "refunded" : b.status === "cancelled" ? "cancelled" : "pending");
+      var s = b.status;
+      if (s === "paid" || s === "confirmed" || s === "completed") return "paid";
+      if (s === "refunded") return "refunded";
+      if (s === "cancelled") return "cancelled";
+      if (s === "to_pay" || s === "pending") return "to_pay";
+      return "requested";
     }
     function statusLabel(b) {
       var s = payState(b);
       if (s === "paid") return '<span class="pay-badge pay-badge--ok">' + SSX.t("confirm.statusPaid") + '</span>';
       if (s === "refunded") return '<span class="pay-badge pay-badge--bad">' + SSX.t("confirm.statusRefunded") + '</span>';
       if (s === "cancelled") return '<span class="pay-badge pay-badge--bad">' + SSX.t("confirm.statusCancelled") + '</span>';
-      return '<span class="pay-badge pay-badge--wait">' + SSX.t("confirm.payWaiting") + '</span>';
+      if (s === "to_pay") return '<span class="pay-badge pay-badge--wait">' + SSX.t("confirm.statusToPay") + '</span>';
+      return '<span class="pay-badge pay-badge--wait">' + SSX.t("confirm.statusRequested") + '</span>';
     }
     function renderPayBox(b) {
       var box = document.getElementById("pay-box");
       var pay = payState(b);
+      if (pay === "requested") {
+        box.style.display = "";
+        box.innerHTML = '<div class="pay-panel" data-st="requested"><h3 class="pay-title">' + SSX.icon("clock", 16) + " " + SSX.t("confirm.requestedTitle") + '</h3><p class="muted">' + SSX.t("confirm.requestedNote") + '</p><div class="pay-live">' + statusLabel(b) + '</div></div>';
+        return;
+      }
       if (pay === "cancelled" || pay === "refunded") {
         box.style.display = "";
-        box.innerHTML = '<div class="pay-panel" data-st="' + pay + '"><h3 class="pay-title">' + statusLabel(b) + '</h3><p class="muted">' + SSX.t("confirm.statusRefunded") + '.</p></div>';
+        var reason = b.cancel_reason ? '<p class="muted"><b>' + SSX.t("confirm.cancelReason") + '</b> ' + SSX.helpers.esc(b.cancel_reason) + '</p>' : "";
+        box.innerHTML = '<div class="pay-panel" data-st="' + pay + '"><h3 class="pay-title">' + statusLabel(b) + '</h3>' + reason + '</div>';
         return;
       }
       box.style.display = "";
@@ -159,6 +177,7 @@
       html += '<div class="row"><span>' + SSX.t("booking.total") + '</span><b>' + SSX.helpers.fmt(b.total) + "</b></div>";
       html += '<div class="row"><span>' + SSX.t("confirm.payUseRef") + '</span><b class="ref-copy">' + SSX.helpers.esc(b.ref || ref) + "</b></div>";
       html += '<p class="tiny muted pay-note-line">' + SSX.icon("lock", 13) + " " + SSX.t("booking.payRef") + '</p>';
+      html += '<p class="tiny muted">' + SSX.t("confirm.payAfterApproval") + '</p>';
       html += "<div class=\"pay-live\">" + statusLabel(b) + "</div>";
       html += "</div>";
       box.innerHTML = html;

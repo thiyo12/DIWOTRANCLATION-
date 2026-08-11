@@ -13,6 +13,9 @@
     phone: "",
     notes: "",
     canton: "Zurich",
+    urgent: false,
+    lastMinute: false,
+    consent: false,
     submitting: false
   };
 
@@ -137,7 +140,7 @@
       var b = document.createElement("button");
       b.type = "button";
       b.className = "sel-card" + (state.docType && state.docType.id === dt.id ? " selected" : "");
-      b.innerHTML = SSX.icon(dt.icon || "file") + '<span>' + docTypeName(dt) + '</span>';
+      b.innerHTML = SSX.icon(dt.icon || "file") + '<span>' + SSX.helpers.esc(docTypeName(dt)) + '</span>';
       b.onclick = function () {
         state.docType = dt;
         grid.querySelectorAll(".sel-card").forEach(function (x) { x.classList.remove("selected"); });
@@ -212,10 +215,13 @@
           '<div class="field"><input class="input" id="d-phone" placeholder="' + t("booking.phone") + '" value="' + SSX.helpers.esc(state.phone) + '"></div>' +
         '</div>' +
       '</div>' +
-      '<div class="field"><label>' + t("fill.canton") + '</label>' +
-        '<select class="input" id="d-canton">' + SSX.cantonOptions(state.canton) + '</select></div>' +
-      '<p class="tiny muted" style="margin-top:4px;">' + t("fill.ratesNote") + ' <span id="d-canton-note" class="canton-note"></span></p>' +
+      '<p class="tiny muted" style="margin-top:4px;">' + t("fill.ratesNote") + '</p>' +
+      '<div class="field" style="margin-top:14px;"><label>' + t("fill.options") + '</label>' +
+        '<label class="opt-line"><input type="checkbox" id="d-urgent" ' + (state.urgent ? "checked" : "") + '> <span>' + t("fill.urgent") + ' (+' + (Number(SSX.settings.docUrgentFlat) || 15) + ')</span></label>' +
+        '<label class="opt-line"><input type="checkbox" id="d-lastmin" ' + (state.lastMinute ? "checked" : "") + '> <span>' + t("fill.lastMinute") + ' (+' + (Number(SSX.settings.docLastMinute) || 25) + ')</span></label>' +
+      '</div>' +
       '<div class="field"><label>' + t("fill.note") + '</label><textarea class="textarea" id="d-notes" placeholder="' + t("fill.notePh") + '">' + SSX.helpers.esc(state.notes) + '</textarea></div>' +
+      '<label class="consent-line" style="margin:14px 0;"><input type="checkbox" id="d-consent"> <span>' + t("privacy.consent") + ' (<a href="privacy.html" target="_blank" rel="noopener">' + t("privacy.link") + '</a>)</span></label>' +
       '<input type="text" name="website" id="d-website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">' +
       '<p class="tiny muted" style="margin-top:6px;">' + SSX.icon("file") + ' ' + t("fill.emailNote") + '</p>';
 
@@ -228,18 +234,12 @@
     bind("#d-email", "email");
     bind("#d-phone", "phone");
     bind("#d-notes", "notes");
-    var cant = c.querySelector("#d-canton");
-    if (cant) {
-      cant.addEventListener("change", function () {
-        state.canton = cant.value;
-        var n = document.getElementById("d-canton-note");
-        if (n) n.textContent = state.canton && state.canton !== "Zurich" ? "· " + t("svc.cantonNote").replace("X%", (Number(SSX.settings.cantonSurcharge) || 0) + "%") : "";
-      });
-    }
-    bind("#d-name", "customer");
-    bind("#d-email", "email");
-    bind("#d-phone", "phone");
-    bind("#d-notes", "notes");
+    var urg = c.querySelector("#d-urgent");
+    if (urg) urg.addEventListener("change", function () { state.urgent = urg.checked; renderSummary(); });
+    var lm = c.querySelector("#d-lastmin");
+    if (lm) lm.addEventListener("change", function () { state.lastMinute = lm.checked; renderSummary(); });
+    var cons = c.querySelector("#d-consent");
+    if (cons) cons.addEventListener("change", function () { state.consent = cons.checked; });
   }
 
   function renderSummary() {
@@ -260,6 +260,10 @@
     line(t("fill.langFromLabel"), SSX.t("lang." + state.fromLang) + " → " + SSX.t("lang." + state.toLang));
     if (state.customer) line(t("booking.firstName"), state.customer);
     if (state.email) line(t("booking.email"), state.email);
+    var est = Number(SSX.settings.docFlat) || 0;
+    if (state.urgent) est += Number(SSX.settings.docUrgentFlat) || 0;
+    if (state.lastMinute) est += Number(SSX.settings.docLastMinute) || 0;
+    line(t("fill.feeEstimate"), "CHF " + est.toFixed(2));
   }
 
   function validate() {
@@ -271,6 +275,7 @@
     } else if (state.step === 2) {
       if (!state.customer.trim()) msg = t("err.name");
       else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(state.email)) msg = t("err.email");
+      else if (!state.consent) msg = t("privacy.consentRequired");
     }
     if (msg) {
       SSX.toast(msg, "error");
@@ -300,7 +305,9 @@
         to_lang: state.toLang,
         mode: state.mode,
         fields: state.fields.trim() ? state.fields : null,
-        canton: state.canton,
+        urgent: !!state.urgent,
+        last_minute: !!state.lastMinute,
+        consent: true,
         notes: state.notes,
         website: document.getElementById("d-website") ? document.getElementById("d-website").value : ""
       }).then(function (res) {

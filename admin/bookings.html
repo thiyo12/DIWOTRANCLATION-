@@ -24,7 +24,7 @@
         var c = document.getElementById("content");
         c.innerHTML =
           '<div class="toolbar">' +
-          '<select id="f-status"><option value="">All statuses</option><option>pending</option><option>paid</option><option>refunded</option><option>cancelled</option><option>confirmed</option><option>completed</option></select>' +
+          '<select id="f-status"><option value="">All statuses</option><option>requested</option><option>to_pay</option><option>paid</option><option>refunded</option><option>cancelled</option><option>confirmed</option><option>completed</option><option>pending</option></select>' +
           '<select id="f-mode"><option value="">All modes</option><option value="video">Video</option><option value="on_site">On-site</option></select>' +
           '<input type="search" id="f-q" placeholder="Search ref, name, email…">' +
           '<button class="btn btn-dark btn-sm" id="btn-refresh">↻ Refresh</button>' +
@@ -98,13 +98,13 @@
         '<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px;">' +
         '<div class="flex mb"><label class="small" style="font-weight:800;min-width:70px;">Status</label>' +
         '<select id="mv-status" class="input" style="flex:1;">' +
-          ["pending", "paid", "refunded", "cancelled", "confirmed", "completed"].map(function (s) { return '<option' + (b.status === s ? " selected" : "") + '>' + s + '</option>'; }).join("") +
+          ["requested", "to_pay", "pending", "paid", "refunded", "cancelled", "confirmed", "completed"].map(function (s) { return '<option' + (b.status === s ? " selected" : "") + '>' + s + '</option>'; }).join("") +
         '</select>' +
         '<button class="btn btn-dark btn-sm" id="mv-save">Save</button>' +
         '<button class="btn btn-light btn-sm danger" id="mv-del">Delete</button></div>' +
         '<div class="flex mb" style="margin-top:10px;">' +
-        '<button class="btn btn-primary btn-sm" id="mv-pay">' + SS.icon("check", 14) + " Mark as paid</button>" +
-        '<button class="btn btn-light btn-sm danger" id="mv-refund">' + SS.icon("arrow-back", 14) + " Refund / reverse</button>" +
+        '<button class="btn btn-primary btn-sm" id="mv-approve">' + SS.icon("check", 14) + " Approve &amp; ask to pay</button>" +
+        '<button class="btn btn-light btn-sm danger" id="mv-cancel">' + SS.icon("arrow-back", 14) + " Cancel &amp; release slot</button>" +
         "</div>" +
         '</div>' +
         '<button class="btn btn-light btn-sm" id="mv-edit" style="margin-top:4px;">' + SS.icon("edit", 14) + " Edit details</button>" +
@@ -122,19 +122,25 @@
           SS.del("/admin/api/bookings/" + id).then(function () { m.remove(); load(); SS.toast("Booking deleted.", "success"); });
         });
       };
-      m.querySelector("#mv-pay").onclick = function () {
-        SS.confirm("Mark " + b.ref + " as paid (payment " + SS.fmt(b.total) + " received)?", function () {
-          SS.patch("/admin/api/bookings/" + id, { status: "paid" }).then(function () {
-            m.remove(); load(); SS.toast("Marked paid — booking confirmed.", "success");
+      m.querySelector("#mv-approve").onclick = function () {
+        SS.confirm("Approve " + b.ref + " and ask the customer to pay " + SS.fmt(b.total) + "? The slot stays reserved for them.", function () {
+          SS.patch("/admin/api/bookings/" + id, { status: "to_pay" }).then(function () {
+            m.remove(); load(); SS.toast("Approved — payment instructions now shown to customer.", "success");
           }).catch(function (e) { SS.toast(e.message, "error"); });
         });
       };
-      m.querySelector("#mv-refund").onclick = function () {
-        SS.confirm("Refund / reverse " + b.ref + " back to the customer? Booking will be cancelled.", function () {
-          SS.patch("/admin/api/bookings/" + id, { status: "refunded" }).then(function () {
-            m.remove(); load(); SS.toast("Refunded / reversed.", "success");
+      m.querySelector("#mv-cancel").onclick = function () {
+        var m2 = SS.modal(
+          '<h2>Cancel ' + b.ref + '</h2>' +
+          '<p class="muted small">The slot will be released and becomes bookable again immediately.</p>' +
+          '<div class="field mt"><label>Reason (optional, stored for your records)</label><input class="input" id="c-reason" placeholder="e.g. customer could not be reached"></div>' +
+          '<button class="btn btn-red btn-block" id="c-go">Cancel &amp; release slot</button>'
+        );
+        m2.querySelector("#c-go").onclick = function () {
+          SS.patch("/admin/api/bookings/" + id, { status: "cancelled", cancel_reason: m2.querySelector("#c-reason").value || "" }).then(function () {
+            m2.remove(); m.remove(); load(); SS.toast("Booking cancelled — slot released.", "success");
           }).catch(function (e) { SS.toast(e.message, "error"); });
-        });
+        };
       };
       m.querySelector("#mv-edit").onclick = function () {
         var box = document.getElementById("edit-box");
@@ -181,7 +187,8 @@
         ["Location", b.address], ["Customer", b.customer], ["Email", b.email], ["Phone", b.phone],
         ["Base price", SS.fmt(b.base_price) + " /h"], ["Interpreting", SS.fmt(b.duration_price)],
         ["Travel fee", SS.fmt(b.fee)], ["Total", SS.fmt(b.total)],
-        ["Payment method", b.method], ["Status", b.status], ["Notes", b.notes], ["Booked", SS.when(b.created_at)]
+        ["Payment method", b.method], ["Status", b.status], ["Notes", b.notes],
+        ["Cancel reason", b.cancel_reason], ["Booked", SS.when(b.created_at)]
       ];
       return rows.map(function (r) {
         return '<div class="detail-row"><span>' + SS.esc(r[0]) + '</span><b>' + SS.esc(r[1] && r[1] !== "" ? r[1] : "—") + '</b></div>';

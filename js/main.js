@@ -61,7 +61,17 @@ SSX.settings = {
   docPlainWord: 0.15,
   docCertWord: 0.2,
   docUrgentPct: 50,
-  videoPrice: 60
+  videoPrice: 60,
+  docFlat: 125,
+  docFlatTax: 120,
+  docLastMinute: 25,
+  docUrgentFlat: 15,
+  workStart: "08:30",
+  workEnd: "16:30",
+  workDays: [1, 2, 3, 4, 5, 6],
+  leadDays: 2,
+  minDate: "",
+  paused: false
 };
 
 SSX.applySettings = function (s) {
@@ -71,12 +81,26 @@ SSX.applySettings = function (s) {
     travel_fee: "travelFee", hero_image_url: "heroImage", flag_style: "flagStyle",
     pay_twint_ref: "payTwintRef", pay_iban: "payIban", pay_bank_name: "payBankName",
     canton_surcharge: "cantonSurcharge", doc_plain_word: "docPlainWord",
-    doc_cert_word: "docCertWord", doc_urgent_pct: "docUrgentPct", video_price: "videoPrice"
+    doc_cert_word: "docCertWord", doc_urgent_pct: "docUrgentPct", video_price: "videoPrice",
+    doc_flat: "docFlat", doc_flat_tax: "docFlatTax", doc_last_minute: "docLastMinute",
+    doc_urgent_flat: "docUrgentFlat", work_start: "workStart", work_end: "workEnd"
   };
   Object.keys(map).forEach(function (k) { if (s[k] !== undefined && s[k] !== null) SSX.settings[map[k]] = s[k]; });
   ["whatsapp", "instagram", "facebook", "linkedin", "tiktok", "currency"].forEach(function (k) {
     if (s[k] !== undefined && s[k] !== null) SSX.settings[k] = s[k];
   });
+};
+
+SSX.capacity = { paused: false, minDate: "", leadDays: 2 };
+
+SSX.applyCapacity = function (c) {
+  if (!c) return;
+  if (c.workStart) SSX.settings.workStart = c.workStart;
+  if (c.workEnd) SSX.settings.workEnd = c.workEnd;
+  if (Array.isArray(c.workDays)) SSX.settings.workDays = c.workDays;
+  if (c.leadDays !== undefined) SSX.settings.leadDays = Number(c.leadDays);
+  if (c.minDate) SSX.settings.minDate = c.minDate;
+  if (c.paused !== undefined) SSX.settings.paused = !!c.paused;
 };
 
 SSX.catalogKey = null;
@@ -100,6 +124,7 @@ SSX.syncServices = function (list) {
 SSX.applyCatalog = function (j) {
   if (!j) return;
   if (j.settings) SSX.applySettings(j.settings);
+  if (j.capacity) SSX.applyCapacity(j.capacity);
   if (j.services) SSX.syncServices(j.services);
   SSX.catalogKey = SSX.catalogSignature(j);
 };
@@ -267,13 +292,14 @@ SSX.shellFooter = function () {
         '<li><a href="fillform.html" data-i18n="nav.fillForm"></a></li>' +
       "</ul></div>" +
       '<div class="footer-col"><h4>' + SSX.t("nav.contact") + '</h4><ul>' +
-        '<li><a href="mailto:' + SSX.settings.supportEmail + '">' + SSX.settings.supportEmail + "</a></li>" +
-        '<li><a href="tel:' + SSX.settings.supportPhone.replace(/\s/g, "") + '">' + SSX.settings.supportPhone + "</a></li>" +
+        '<li><a href="mailto:' + SSX.helpers.esc(SSX.settings.supportEmail) + '">' + SSX.helpers.esc(SSX.settings.supportEmail) + "</a></li>" +
+        '<li><a href="tel:' + SSX.helpers.esc(String(SSX.settings.supportPhone).replace(/\s/g, "")) + '">' + SSX.helpers.esc(SSX.settings.supportPhone) + "</a></li>" +
         '<li>' + (SSX.settings.whatsapp ? '<a href="' + SSX.helpers.esc(SSX.settings.whatsapp) + '" target="_blank" rel="noopener">WhatsApp</a>' : "") + "</li>" +
+        '<li><a href="privacy.html">' + SSX.t("privacy.link") + "</a></li>" +
         '<li class="footer-addr">' + SSX.icon("map-pin", 13) + " " + SSX.t("footer.addr") + "</li>" +
       "</ul></div>" +
     "</div>" +
-    '<div class="container footer-bottom"><span>© <span class="year"></span> ' + SSX.settings.brandName + ", Zürich, Switzerland. <span data-i18n=\"footer.rights\"></span></span>" +
+    '<div class="container footer-bottom"><span>© <span class="year"></span> ' + SSX.helpers.esc(SSX.settings.brandName) + ", Zürich, Switzerland. <span data-i18n=\"footer.rights\"></span></span>" +
     '<span class="footer-pay">' + SSX.icon("lock", 13) + " Secure payment · Visa · Mastercard · TWINT · Invoice</span>" +
     "</div>"
   );
@@ -395,18 +421,20 @@ SSX.renderFeatured = function () {
       '<span class="feature-icon feature-icon--gold">' + SSX.icon("file", 26) + "</span>" +
       "<div><h3>" + SSX.t("svc.docTitle") + "</h3>" +
       "<p>" + SSX.t("svc.docDesc") + "</p></div>" +
-      '<div class="feature-price">' + SSX.t("svc.docFrom") + " " + (Number(SSX.settings.docPlainWord) || 0).toFixed(2) + "<small> / word</small></div>" +
+      '<div class="feature-price">' + SSX.t("svc.docFrom") + " " + SSX.helpers.fmt(SSX.settings.docFlat) + "</div>" +
       '<span class="feature-note">' + note + "</span>" +
       '<span class="feature-cta">' + SSX.t("svc.docCta") + " →</span>" +
     "</a>";
 };
 
 SSX.fillFees = function () {
-  const plain = document.getElementById("fee-plain");
+  var plain = document.getElementById("fee-plain");
   if (!plain) return;
-  const cert = document.getElementById("fee-cert");
-  const urgent = document.getElementById("fee-urgent");
-  plain.innerHTML = "CHF " + (Number(SSX.settings.docPlainWord) || 0).toFixed(2) + " <small data-i18n=\"fee.perWord\">" + SSX.t("fee.perWord") + "</small>";
-  if (cert) cert.innerHTML = "CHF " + (Number(SSX.settings.docCertWord) || 0).toFixed(2) + " <small data-i18n=\"fee.perWord\">" + SSX.t("fee.perWord") + "</small>";
-  if (urgent) urgent.innerHTML = "+ " + (Number(SSX.settings.docUrgentPct) || 0) + "%<small>" + SSX.t("fee.urShort") + "</small>";
+  var cert = document.getElementById("fee-cert");
+  var urgent = document.getElementById("fee-urgent");
+  var lastmin = document.getElementById("fee-lastmin");
+  plain.innerHTML = SSX.helpers.fmt(SSX.settings.docFlat) + " <small data-i18n=\"fee.perDoc\">" + SSX.t("fee.perDoc") + "</small>";
+  if (cert) cert.innerHTML = SSX.helpers.fmt(SSX.settings.docFlatTax) + " <small data-i18n=\"fee.perDoc\">" + SSX.t("fee.perDoc") + "</small>";
+  if (urgent) urgent.innerHTML = "+ " + (Number(SSX.settings.docUrgentFlat) || 15) + "<small>" + SSX.t("fee.urShort") + "</small>";
+  if (lastmin) lastmin.innerHTML = "+ " + (Number(SSX.settings.docLastMinute) || 25) + "<small>" + SSX.t("fee.lastMinShort") + "</small>";
 };

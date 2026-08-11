@@ -60,17 +60,22 @@
       </div>
       <div class="fee-strip">
         <div class="fee-item">
-          <div class="amount" id="fee-plain">CHF 0.15<small data-i18n="fee.perWord"></small></div>
+          <div class="amount" id="fee-plain">CHF 125<small data-i18n="fee.perDoc"></small></div>
           <h4 data-i18n="fee.plain"></h4>
           <p data-i18n="fee.plainNote"></p>
         </div>
         <div class="fee-item bronze">
-          <div class="amount" id="fee-cert">CHF 0.20<small data-i18n="fee.perWord"></small></div>
+          <div class="amount" id="fee-cert">CHF 120<small data-i18n="fee.perDoc"></small></div>
           <h4 data-i18n="fee.cert"></h4>
           <p data-i18n="fee.certNote"></p>
         </div>
         <div class="fee-item">
-          <div class="amount" id="fee-urgent">+ 50%<small>· 24 h</small></div>
+          <div class="amount" id="fee-lastmin">+ 25<small data-i18n="fee.lastMinShort"></small></div>
+          <h4 data-i18n="fee.lastMin"></h4>
+          <p data-i18n="fee.lastMinNote"></p>
+        </div>
+        <div class="fee-item">
+          <div class="amount" id="fee-urgent">+ 15<small data-i18n="fee.urShort"></small></div>
           <h4 data-i18n="fee.ur"></h4>
           <p data-i18n="fee.urNote"></p>
         </div>
@@ -115,6 +120,7 @@
           <div class="field"><label data-i18n="cf.message"></label>
             <textarea class="textarea" id="t-detail" data-ph="trans.detailPh"></textarea>
           </div>
+          <label class="consent-line"><input type="checkbox" id="t-consent"> <span data-i18n="privacy.consent"></span> (<a href="privacy.html" target="_blank" rel="noopener" data-i18n="privacy.link"></a>)</label>
           <button type="submit" class="btn btn-primary btn-lg btn-block" id="t-submit" data-i18n="trans.orderCta"></button>
           <p class="tiny muted" style="text-align:center;margin-top:12px;" data-i18n="cf.noPay"></p>
         </form>
@@ -147,17 +153,19 @@
       if (!name) { SSX.toast(SSX.t("err.name"), "error"); return; }
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { SSX.toast(SSX.t("err.email"), "error"); return; }
       if (!detail) { SSX.toast(SSX.t("err.detail"), "error"); return; }
+      if (!document.getElementById("t-consent").checked) { SSX.toast(SSX.t("privacy.consentRequired"), "error"); return; }
 
       var payload = {
         service: "translation",
         title: document.getElementById("t-doctype").selectedOptions[0] && document.getElementById("t-doctype").selectedOptions[0].textContent,
-        language_code: fromSel.value + ">" + toSel.value,
+        language_code: fromSel.value,
         language_name: fromSel.selectedOptions[0].textContent + " → " + toSel.selectedOptions[0].textContent,
         detail: detail,
         customer: name,
         email: email,
         phone: "",
-        files: ""
+        files: "",
+        consent: true
       };
 
       var btn = document.getElementById("t-submit");

@@ -61,7 +61,7 @@ app.use(
 );
 
 app.use(express.json({ limit: "100kb", strict: true }));
-app.use(express.urlencoded({ extended: true, limit: "100kb" }));
+app.use(express.urlencoded({ extended: false, limit: "100kb" }));
 app.use(cookieParser());
 
 app.use((req, res, next) => {
@@ -87,6 +87,32 @@ const writeRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { ok: false, error: "Too many requests. Slow down." }
+});
+
+const refRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: "Too many lookups. Slow down." }
+});
+
+// Origin allow-list for public writes: cross-site scripts cannot submit forms.
+app.use(["/api/bookings", "/api/documents", "/api/concierge"], (req, res, next) => {
+  const origin = req.headers && req.headers.origin;
+  if (origin) {
+    try {
+      const o = new URL(origin);
+      const host = String(req.headers.host || "").toLowerCase();
+      if (o.host !== host) {
+        secEvent(req, "origin_reject", "Origin " + origin + " rejected");
+        return res.status(403).json({ ok: false, error: "Origin not allowed." });
+      }
+    } catch (e) {
+      return res.status(403).json({ ok: false, error: "Origin not allowed." });
+    }
+  }
+  next();
 });
 
 // --------------------------------------------------------------------------
@@ -157,11 +183,129 @@ function NumberSetting(key) {
   return isNaN(v) ? 0 : v;
 }
 
+// --------------------------------------------------------------------------
+// Capacity engine — single-interpreter availability
+// --------------------------------------------------------------------------
+const HOLDING_STATUSES = ["requested", "to_pay", "pending", "confirmed", "paid", "completed"];
+
+function parseHM(s) {
+  const m = String(s || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]), min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+function fmtHM(min) {
+  const h = Math.floor(min / 60), m = min % 60;
+  return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+}
+function workDays() {
+  return String(loadSetting("work_days", "1,2,3,4,5,6"))
+    .split(",")
+    .map((d) => Number(d))
+    .filter((d) => d >= 0 && d <= 6);
+}
+function workBounds() {
+  return { start: parseHM(loadSetting("work_start", "08:30")) || 510, end: parseHM(loadSetting("work_end", "16:30")) || 990 };
+}
+function bufferFor(mode) {
+  return mode === "on_site" ? NumberSetting("visit_buffer_min") || 60 : NumberSetting("video_buffer_min") || 15;
+}
+function pauseEnabled() {
+  return loadSetting("pause_bookings", "0") === "1";
+}
+function utcToday() {
+  return new Date().toISOString().slice(0, 10);
+}
+function minBookingDate() {
+  const d = new Date(utcToday() + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + (NumberSetting("lead_days") || 2));
+  return d.toISOString().slice(0, 10);
+}
+function dayInfo(dateStr) {
+  const day = new Date(dateStr + "T00:00:00Z").getUTCDay();
+  const reason = [];
+  if (!workDays().includes(day)) reason.push("closed_weekend");
+  const ov = one("SELECT reason FROM availability_overrides WHERE date = ?", [dateStr]);
+  if (ov) reason.push("override");
+  if (pauseEnabled()) reason.push("paused");
+  return { closed: reason.length > 0, reasons: reason, day };
+}
+function activeBookings(dateStr) {
+  return q(
+    "SELECT date, time, duration, mode, status FROM bookings WHERE date = ? AND status IN ('requested','to_pay','pending','confirmed','paid','completed')",
+    [dateStr]
+  );
+}
+function occupiedIntervals(dateStr) {
+  return activeBookings(dateStr).map(function (b) {
+    const s = parseHM(b.time);
+    if (s === null) return null;
+    const buf = bufferFor(b.mode);
+    return { from: s - buf, to: s + (Number(b.duration) || 60) + buf };
+  }).filter(Boolean);
+}
+function isBusy(dateStr, startMin, durMins) {
+  const iv = occupiedIntervals(dateStr);
+  const a = startMin, b = startMin + durMins;
+  for (const x of iv) {
+    if (a < x.to && b > x.from) return true;
+  }
+  return false;
+}
+function freeSlots(dateStr, mode, durMins) {
+  const info = dayInfo(dateStr);
+  if (info.closed) return [];
+  if (dateStr < minBookingDate()) return [];
+  const w = workBounds();
+  const dur = Number(durMins) || 60;
+  const out = [];
+  for (let t = w.start; t + dur <= w.end; t += 30) {
+    if (!isBusy(dateStr, t, dur)) out.push(fmtHM(t));
+  }
+  return out;
+}
+function nextFree(mode, durMins) {
+  const from = minBookingDate();
+  const d = new Date(from + "T00:00:00Z");
+  for (let i = 0; i < 21; i++) {
+    const ds = d.toISOString().slice(0, 10);
+    const slots = freeSlots(ds, mode, durMins);
+    if (slots.length) return { date: ds, time: slots[0] };
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return { date: null, time: null };
+}
+function bookingBlock(dateStr, timeStr, mode, durMins) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return { ok: false, status: 400, error: "Invalid date." };
+  if (pauseEnabled()) return { ok: false, status: 409, error: "We are not taking new appointments right now.", nextFree: nextFree(mode, durMins) };
+  const info = dayInfo(dateStr);
+  if (info.closed) {
+    if (info.reasons.includes("override")) return { ok: false, status: 409, error: "This day is no longer available.", nextFree: nextFree(mode, durMins) };
+    return { ok: false, status: 400, error: "This day is not a working day." };
+  }
+  if (dateStr < minBookingDate()) return { ok: false, status: 400, error: "Appointments must be requested at least " + (NumberSetting("lead_days") || 2) + " days in advance." };
+  const t = parseHM(timeStr);
+  if (t === null) return { ok: false, status: 400, error: "Invalid time." };
+  const dur = Number(durMins) || 60;
+  const w = workBounds();
+  if (t < w.start || t + dur > w.end) return { ok: false, status: 400, error: "This time is outside working hours." };
+  if (isBusy(dateStr, t, dur)) {
+    return { ok: false, status: 409, error: "This time was just taken by someone else.", nextFree: nextFree(mode, dur) };
+  }
+  return { ok: true };
+}
+
 function genRef(prefix) {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let out = "";
-  for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return (prefix || "SSX") + "-" + out;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let out = "";
+    for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    const ref = (prefix || "SSX") + "-" + out;
+    const dup = one("SELECT ref FROM bookings WHERE ref = ? UNION ALL SELECT ref FROM document_requests WHERE ref = ? UNION ALL SELECT ref FROM concierge WHERE ref = ?", [ref, ref, ref]);
+    if (!dup) return ref;
+  }
+  return (prefix || "SSX") + "-" + Date.now().toString(36).toUpperCase().slice(-6);
 }
 
 function parseFilters(table, query, allowed) {
@@ -188,24 +332,42 @@ function hashToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-function adminAuthorized(req) {
-  const token = (req.cookies && req.cookies.ssx_session) || (req.headers.authorization ? String(req.headers.authorization).replace(/^Bearer /, "") : "");
-  if (!token) return false;
-  const s = one("SELECT * FROM sessions WHERE token_hash = ?", [hashToken(token)]);
-  if (!s) return false;
-  const exp = new Date(String(s.expires_at).replace(" ", "T")).getTime();
-  if (Date.now() > exp) {
-    run("DELETE FROM sessions WHERE token_hash = ?", [hashToken(token)]);
-    return false;
-  }
-  run("UPDATE sessions SET last_seen = ? WHERE token_hash = ?", [now(), hashToken(token)]);
-  return true;
+function requestFingerprint(req) {
+  const ua = String(req.headers["user-agent"] || "").slice(0, 240);
+  const ip = clientIp(req);
+  return { ua: crypto.createHash("sha256").update(ua).digest("hex").slice(0, 32), ip };
 }
 
-function issueSession(res) {
+function adminAuthorized(req) {
+  const token = (req.cookies && req.cookies.ssx_session) || (req.headers.authorization ? String(req.headers.authorization).replace(/^Bearer /, "") : "");
+  if (!token) return null;
+  const hash = hashToken(token);
+  const s = one("SELECT * FROM sessions WHERE token_hash = ?", [hash]);
+  if (!s) return null;
+  const exp = new Date(String(s.expires_at).replace(" ", "T")).getTime();
+  if (Date.now() > exp) {
+    run("DELETE FROM sessions WHERE token_hash = ?", [hash]);
+    return null;
+  }
+  const fp = requestFingerprint(req);
+  if (s.ua_hash && s.ua_hash !== fp.ua) {
+    secEvent(req, "session_mismatch", "Session user-agent mismatch; rejected");
+    return null;
+  }
+  if (s.ip && s.ip !== fp.ip) {
+    secEvent(req, "session_ip_shift", "Session IP changed from " + s.ip + " to " + fp.ip);
+  }
+  run("UPDATE sessions SET last_seen = ? WHERE token_hash = ?", [now(), hash]);
+  return s;
+}
+
+function issueSession(req, res) {
   const token = crypto.randomBytes(32).toString("hex");
+  const csrf = crypto.randomBytes(18).toString("base64url");
+  const fp = requestFingerprint(req);
   const expiresAt = new Date(Date.now() + SESSION_HOURS * 3600000).toISOString().slice(0, 19).replace("T", " ");
-  run("INSERT INTO sessions (token_hash, created_at, expires_at, last_seen) VALUES (?,?,?,?)", [hashToken(token), now(), expiresAt, now()]);
+  run("INSERT INTO sessions (token_hash, created_at, expires_at, last_seen, csrf_token, ua_hash, ip, kind) VALUES (?,?,?,?,?,?,?,?)",
+    [hashToken(token), now(), expiresAt, now(), csrf, fp.ua, fp.ip, "admin"]);
   res.cookie("ssx_session", token, {
     path: "/",
     httpOnly: true,
@@ -213,6 +375,7 @@ function issueSession(res) {
     secure: IS_PROD,
     maxAge: SESSION_HOURS * 3600000
   });
+  return { csrf };
 }
 
 function destroySession(req, res) {
@@ -222,21 +385,28 @@ function destroySession(req, res) {
   res.clearCookie("ssx_2fa_token", { path: "/admin" });
 }
 
-// per-boot CSRF token (double-submit style: page must echo it back)
-const CSRF_TOKEN = crypto.randomBytes(18).toString("base64url");
+function sessionCsrf(req) {
+  const token = (req.cookies && req.cookies.ssx_session) || "";
+  if (!token) return "";
+  const s = one("SELECT csrf_token FROM sessions WHERE token_hash = ?", [hashToken(token)]);
+  return s ? String(s.csrf_token || "") : "";
+}
 
 function attachCsrf(res) {
-  res.setHeader("X-CSRF-Token", CSRF_TOKEN);
+  const token = (res.req && res.req.cookies && res.req.cookies.ssx_session) || "";
+  const s = token ? one("SELECT csrf_token FROM sessions WHERE token_hash = ?", [hashToken(token)]) : null;
+  res.setHeader("X-CSRF-Token", s ? s.csrf_token : "");
 }
 
 function requireAdmin(req, res, next) {
-  if (!adminAuthorized(req)) {
+  const s = adminAuthorized(req);
+  if (!s) {
     secEvent(req, "unauth_api", "Rejected " + req.method + " " + req.originalUrl.slice(0, 200));
     return res.status(401).json({ ok: false, error: "Unauthorized. Please log in." });
   }
   if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS") {
     const sent = req.headers["x-csrf-token"] || "";
-    if (sent !== CSRF_TOKEN) {
+    if (sent !== String(s.csrf_token || "")) {
       secEvent(req, "csrf_fail", "CSRF token mismatch on " + req.method + " " + req.originalUrl.slice(0, 200));
       return res.status(403).json({ ok: false, error: "CSRF check failed." });
     }
@@ -376,20 +546,27 @@ app.post("/admin/api/login", loginRateLimit, (req, res) => {
     if (blocked) secEvent(req, "brute_lockout", "IP auto-blocked after repeated login failures");
     return res.status(401).json({ ok: false, error: "Invalid password." });
   }
+  if (IS_PROD && !admin2faEnabled()) {
+    return res.status(403).json({ ok: false, error: "Two-step verification must be enabled before signing in." });
+  }
   res.clearCookie("ssx_2fa_token", { path: "/admin" });
   if (admin2faEnabled()) {
     const preToken = crypto.randomBytes(24).toString("hex");
-    run("INSERT INTO sessions (token_hash, created_at, expires_at, last_seen) VALUES (?,?,?,?)", [hashToken(preToken), now(), new Date(Date.now() + 10 * 60000).toISOString().slice(0, 19).replace("T", " "), now()]);
+    run("INSERT INTO sessions (token_hash, created_at, expires_at, last_seen, csrf_token, ua_hash, ip, kind) VALUES (?,?,?,?,?,?,?,?)",
+      [hashToken(preToken), now(), new Date(Date.now() + 10 * 60000).toISOString().slice(0, 19).replace("T", " "), now(), "", "", "", "pre2fa"]);
     res.cookie("ssx_2fa_token", preToken, { path: "/admin", httpOnly: true, sameSite: "lax", secure: IS_PROD, maxAge: 10 * 60000 });
     return res.json({ ok: true, need2fa: true });
   }
-  issueSession(res);
-  res.json({ ok: true, csrf: CSRF_TOKEN, expires: SESSION_HOURS });
+  const s = issueSession(req, res);
+  res.json({ ok: true, csrf: s.csrf, expires: SESSION_HOURS, mustChange: loadSetting("admin_pw_changed", "0") !== "1" });
 });
 
 app.post("/admin/api/login2fa", loginRateLimit, (req, res) => {
   const pre = (req.cookies && req.cookies.ssx_2fa_token) || "";
   if (!pre) return res.status(401).json({ ok: false, error: "2FA session expired. Sign in again." });
+  const preHash = hashToken(pre);
+  const preS = one("SELECT * FROM sessions WHERE token_hash = ?", [preHash]);
+  if (!preS || preS.kind !== "pre2fa") return res.status(401).json({ ok: false, error: "2FA session expired. Sign in again." });
   const secret = loadSetting("admin_2fa_secret", "");
   if (!secret) return res.status(401).json({ ok: false, error: "2FA not configured." });
   const code = String(req.body && req.body.code || "").trim();
@@ -398,10 +575,23 @@ app.post("/admin/api/login2fa", loginRateLimit, (req, res) => {
     logLogin(clientIp(req), false);
     return res.status(401).json({ ok: false, error: "Invalid code." });
   }
-  run("DELETE FROM sessions WHERE token_hash = ?", [hashToken(pre)]);
+  run("DELETE FROM sessions WHERE token_hash = ?", [preHash]);
   res.clearCookie("ssx_2fa_token", { path: "/admin" });
-  issueSession(res);
-  res.json({ ok: true, csrf: CSRF_TOKEN, expires: SESSION_HOURS });
+  const s = issueSession(req, res);
+  res.json({ ok: true, csrf: s.csrf, expires: SESSION_HOURS, mustChange: loadSetting("admin_pw_changed", "0") !== "1" });
+});
+
+app.post("/admin/api/password", requireAdmin, (req, res) => {
+  const cur = String((req.body && req.body.current) || "");
+  const next = String((req.body && req.body.next) || "");
+  if (!verifyPassword(cur)) return res.status(401).json({ ok: false, error: "Current password is wrong." });
+  if (next.length < 12) return res.status(400).json({ ok: false, error: "New password must be at least 12 characters." });
+  if (!/[A-Za-z]/.test(next) || !/[0-9]/.test(next)) return res.status(400).json({ ok: false, error: "New password must contain letters and digits." });
+  run("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", ["admin_pw_hash", bcrypt.hashSync(next, 12)]);
+  run("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", ["admin_pw_changed", "1"]);
+  run("DELETE FROM sessions");
+  secEvent(req, "password_change", "Admin password changed; all sessions revoked");
+  res.json({ ok: true, relogin: true });
 });
 
 app.post("/admin/api/logout", (req, res) => {
@@ -411,7 +601,7 @@ app.post("/admin/api/logout", (req, res) => {
 
 app.get("/admin/api/me", requireAdmin, (req, res) => {
   attachCsrf(res);
-  res.json({ ok: true, user: { role: "admin", twofa: admin2faEnabled() }, settings: publicSettings() });
+  res.json({ ok: true, user: { role: "admin", twofa: admin2faEnabled() }, mustChange: loadSetting("admin_pw_changed", "0") !== "1", settings: publicSettings() });
 });
 
 function totpCheck(code, secret) {
@@ -477,8 +667,56 @@ app.get("/api/catalog", (req, res) => {
       instagram: loadSetting("instagram", ""),
       facebook: loadSetting("facebook", ""),
       linkedin: loadSetting("linkedin", "")
+    },
+    capacity: {
+      workStart: loadSetting("work_start", "08:30"),
+      workEnd: loadSetting("work_end", "16:30"),
+      workDays: String(loadSetting("work_days", "1,2,3,4,5,6")).split(",").map(Number),
+      leadDays: NumberSetting("lead_days") || 2,
+      minDate: minBookingDate(),
+      paused: pauseEnabled()
     }
   });
+});
+
+// Public availability — a date's free slots, plus the next free moment
+app.get("/api/availability", (req, res) => {
+  const date = String(req.query.date || "");
+  const mode = MODES.includes(req.query.mode) ? req.query.mode : "video";
+  const dur = Number(req.query.duration) || 60;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ ok: false, error: "date required (YYYY-MM-DD)." });
+  const info = dayInfo(date);
+  const min = minBookingDate();
+  const slots = freeSlots(date, mode, dur);
+  res.json({
+    ok: true,
+    date,
+    mode,
+    duration: dur,
+    closed: info.closed || date < min,
+    reasons: info.reasons,
+    beforeLead: date < min,
+    leadDays: NumberSetting("lead_days") || 2,
+    slots,
+    nextFree: nextFree(mode, dur)
+  });
+});
+
+app.get("/api/availability/range", (req, res) => {
+  const from = String(req.query.from || utcToday());
+  const days = Math.min(Number(req.query.days) || 14, 60);
+  const mode = MODES.includes(req.query.mode) ? req.query.mode : "video";
+  const dur = Number(req.query.duration) || 60;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return res.status(400).json({ ok: false, error: "from required (YYYY-MM-DD)." });
+  const d = new Date(from + "T00:00:00Z");
+  const out = [];
+  for (let i = 0; i < days; i++) {
+    const ds = d.toISOString().slice(0, 10);
+    const info = dayInfo(ds);
+    out.push({ date: ds, closed: info.closed, reasons: info.reasons, slots: freeSlots(ds, mode, dur) });
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  res.json({ ok: true, mode, duration: dur, days: out, nextFree: nextFree(mode, dur) });
 });
 
 app.post("/api/documents", writeRateLimit, (req, res) => {
@@ -487,13 +725,18 @@ app.post("/api/documents", writeRateLimit, (req, res) => {
   if (!docType) return res.status(400).json({ ok: false, error: "Unknown document type." });
   if (!EMAIL_RE.test(String(b.email || ""))) return res.status(400).json({ ok: false, error: "Valid email required." });
   if (!LANG_CODES.includes(b.from_lang) || !LANG_CODES.includes(b.to_lang)) return res.status(400).json({ ok: false, error: "Invalid language pair." });
+  if (b.consent !== true && b.consent !== "1" && b.consent !== 1) return res.status(400).json({ ok: false, error: "Privacy consent is required." });
   const mode = ["translate", "fill", "both"].includes(b.mode) ? b.mode : "translate";
-  const fields = b.fields && typeof b.fields === "object" ? JSON.stringify(b.fields).slice(0, 4000) : "{}";
+  const fields = JSON.stringify({
+    text: String(b.fields || "").slice(0, 4000),
+    last_minute: b.last_minute ? "Yes" : "No",
+    urgent: b.urgent ? "Yes" : "No"
+  });
   const ref = genRef("SSXD");
   run(
     `INSERT INTO document_requests
-     (ref, doc_type, doc_type_name, from_lang, to_lang, mode, fields, notes, customer, email, phone, ip, status)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'received')`,
+     (ref, doc_type, doc_type_name, from_lang, to_lang, mode, fields, notes, customer, email, phone, ip, status, consent)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'received',1)`,
     [
       ref, docType.id, docType.name_en, b.from_lang, b.to_lang, mode, fields,
       String(b.notes || "").slice(0, 2000),
@@ -507,13 +750,14 @@ app.post("/api/documents", writeRateLimit, (req, res) => {
     ["Reference", ref],
     ["Document", docType.name_en],
     ["Language", b.from_lang + " → " + b.to_lang],
-    ["Next step", "Our team completes your document and emails it back to you."]
+    ["Next step", "Our team completes your document within 2 working days and emails it back to you."]
   ]));
   res.json({ ok: true, ref });
 });
 
-app.get("/api/documents/:ref", (req, res) => {
-  const d = one("SELECT * FROM document_requests WHERE ref = ? AND status != 'blocked'", [req.params.ref]);
+// Public document lookup — only non-personal fields
+app.get("/api/documents/:ref", refRateLimit, (req, res) => {
+  const d = one("SELECT ref, doc_type, doc_type_name, from_lang, to_lang, mode, status FROM document_requests WHERE ref = ? AND status != 'blocked'", [req.params.ref]);
   if (!d) return res.status(404).json({ ok: false, error: "Not found." });
   res.json({ ok: true, request: d });
 });
@@ -526,16 +770,22 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(b.date) || !/^\d{2}:\d{2}$/.test(b.time)) {
     return res.status(400).json({ ok: false, error: "Invalid date or time." });
   }
-  if (b.email && !EMAIL_RE.test(String(b.email))) return res.status(400).json({ ok: false, error: "Valid email required." });
+  if (!EMAIL_RE.test(String(b.email || ""))) return res.status(400).json({ ok: false, error: "Valid email required." });
+  if (b.consent !== true && b.consent !== "1" && b.consent !== 1) return res.status(400).json({ ok: false, error: "Privacy consent is required." });
   const service = one("SELECT * FROM services WHERE id = ? AND active = 1", [b.service_id]);
   const lang = one("SELECT * FROM languages WHERE code = ?", [b.language_code]);
   const dur = one("SELECT * FROM durations WHERE mins = ?", [Number(b.duration) || 60]);
   if (!service || !lang) return res.status(400).json({ ok: false, error: "Invalid service or language." });
 
+  const block = bookingBlock(b.date, b.time, b.mode, dur ? dur.mins : 60);
+  if (!block.ok) {
+    return res.status(block.status).json({ ok: false, error: block.error, nextFree: block.nextFree });
+  }
+
   const travelFee = NumberSetting("travel_fee");
   const canton = String(b.canton || "").trim();
   const cantonSurcharge = NumberSetting("canton_surcharge");
-  const base = b.service_price != null ? Number(b.service_price) : service.price;
+  const base = Number(service.price) || 0;
   const durationPrice = Math.round(base * (dur ? dur.factor : 1) * 100) / 100;
   const surcharge = canton && canton !== "Zurich"
     ? Math.round(100 * (durationPrice * (cantonSurcharge / 100))) / 100
@@ -544,40 +794,43 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
   const total = Math.round(100 * (durationPrice + fee)) / 100;
 
   const ref = genRef(loadSetting("ref_prefix", "SSX"));
-  const method = PAY_METHODS.includes(b.method) ? b.method : "card";
+  const method = PAY_METHODS.includes(b.method) ? b.method : "twint";
 
   run(
     `INSERT INTO bookings
      (ref, language_code, language_name, service_id, service_name, date, time, duration,
-      mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status, canton)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status, canton, consent)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)`,
     [
       ref, lang.code, lang.name, service.id, service.name, b.date, b.time, dur.mins,
       b.mode, String(b.address || "").slice(0, 240), String(b.customer || "").slice(0, 120),
       String(b.email || "").slice(0, 160), String(b.phone || "").slice(0, 40), String(b.notes || "").slice(0, 2000),
-      base, durationPrice, fee, total, method, "pending", canton.slice(0, 60)
+      base, durationPrice, fee, total, method, "requested", canton.slice(0, 60)
     ]
   );
   run("INSERT INTO payments (ref, method, amount, status) VALUES (?,?,?,?)", [ref, method, total, "unpaid"]);
-  sendMail(b.email, "Ssaaxcy Solutions — appointment request " + ref, confirmationHtml("We received your appointment request — payment pending", [
+  sendMail(b.email, "Ssaaxcy Solutions — appointment request " + ref, confirmationHtml("We received your appointment request", [
     ["Reference", ref],
     ["Service", service.name],
     ["Language", lang.name],
     ["When", b.date + " at " + b.time],
     ["Mode", b.mode === "on_site" ? "On-site" : "Video"],
-    ["Total", "CHF " + total.toFixed(2)],
-    ["How to pay", method === "twint" ? ("TWINT to " + loadSetting("pay_twint_ref", "")) : ("Bank transfer to " + loadSetting("pay_iban", ""))],
-    ["Payment reference", "Use " + ref + " as your payment reference"]
+    ["Estimated total", "CHF " + total.toFixed(2)],
+    ["Next step", "We will call you shortly to confirm your appointment."]
   ]));
   res.json({
     ok: true, ref, language: lang.name, service: service.name, date: b.date, time: b.time,
     mode: b.mode, duration: dur ? dur.mins : 60, base_price: base, duration_price: durationPrice,
-    fee, surcharge, canton, total, method, status: "pending"
+    fee, surcharge, canton, total, method, status: "requested"
   });
 });
 
-app.get("/api/bookings/:ref", (req, res) => {
-  const b = one("SELECT * FROM bookings WHERE ref = ?", [req.params.ref]);
+// Public booking lookup — returns only what the confirmation page needs (no contact PII)
+app.get("/api/bookings/:ref", refRateLimit, (req, res) => {
+  const b = one(
+    "SELECT ref, language_code, language_name, service_id, service_name, date, time, duration, mode, address, total, method, status, cancel_reason FROM bookings WHERE ref = ?",
+    [req.params.ref]
+  );
   if (!b) return res.status(404).json({ ok: false, error: "Booking not found." });
   const p = one("SELECT status pay_status FROM payments WHERE ref = ? ORDER BY id DESC LIMIT 1", [req.params.ref]);
   res.json({ ok: true, booking: Object.assign({}, b, { pay_status: p ? p.pay_status : (b.status === "paid" ? "paid" : "unpaid") }) });
@@ -588,10 +841,13 @@ app.post("/api/concierge", writeRateLimit, (req, res) => {
   if (!c.service || !c.detail || !LANG_CODES.includes(c.language_code || "")) {
     return res.status(400).json({ ok: false, error: "service, language and detail are required." });
   }
+  if (c.consent !== true && c.consent !== "1" && c.consent !== 1) {
+    return res.status(400).json({ ok: false, error: "Privacy consent is required." });
+  }
   const ref = genRef("SSX");
   run(
-    `INSERT INTO concierge (ref, service, title, language_code, language_name, detail, customer, email, phone, files, status)
-     VALUES (?,?,?,?,?,?,?,?,?,?,'new')`,
+    `INSERT INTO concierge (ref, service, title, language_code, language_name, detail, customer, email, phone, files, status, consent)
+     VALUES (?,?,?,?,?,?,?,?,?,?,'new',1)`,
     [ref, String(c.service).slice(0, 30), String(c.title || "").slice(0, 200), c.language_code, langName(c.language_code),
       String(c.detail).slice(0, 4000), String(c.customer || "").slice(0, 120), String(c.email || "").slice(0, 160),
       String(c.phone || "").slice(0, 40), String(c.files || "").slice(0, 500)]
@@ -606,7 +862,57 @@ app.post("/api/concierge", writeRateLimit, (req, res) => {
 });
 
 // ============================================================== Admin data API
-const allowedStatuses = ["pending", "confirmed", "completed", "cancelled"];
+const allowedStatuses = ["requested", "to_pay", "pending", "confirmed", "paid", "completed", "cancelled", "refunded"];
+
+// ---- Admin availability calendar ----
+app.get("/admin/api/availability", requireAdmin, (req, res) => {
+  const from = String(req.query.from || utcToday());
+  const days = Math.min(Number(req.query.days) || 35, 93);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return res.status(400).json({ ok: false, error: "from required (YYYY-MM-DD)." });
+  const overrides = q("SELECT date, reason FROM availability_overrides WHERE date >= ?", [from]);
+  const ovMap = {};
+  overrides.forEach((o) => { ovMap[o.date] = o.reason; });
+  const bookings = q(
+    "SELECT date, time, duration, mode, status, ref FROM bookings WHERE date >= ? AND date < date(?, '+' || ? || ' days') AND status IN ('requested','to_pay','pending','confirmed','paid','completed') ORDER BY date, time",
+    [from, from, String(days)]
+  );
+  const byDate = {};
+  bookings.forEach((b) => {
+    (byDate[b.date] = byDate[b.date] || []).push(b);
+  });
+  const d = new Date(from + "T00:00:00Z");
+  const out = [];
+  for (let i = 0; i < days; i++) {
+    const ds = d.toISOString().slice(0, 10);
+    const info = dayInfo(ds);
+    out.push({ date: ds, closed: info.closed, reasons: info.reasons, overrideReason: ovMap[ds] || "", bookings: byDate[ds] || [] });
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  res.json({ ok: true, from, days: out, settings: { workStart: loadSetting("work_start", "08:30"), workEnd: loadSetting("work_end", "16:30"), workDays: workDays(), leadDays: NumberSetting("lead_days") || 2, visitBuffer: NumberSetting("visit_buffer_min") || 60, videoBuffer: NumberSetting("video_buffer_min") || 15, paused: pauseEnabled() } });
+});
+
+app.post("/admin/api/availability/override", requireAdmin, (req, res) => {
+  const date = String((req.body && req.body.date) || "");
+  const reason = String((req.body && req.body.reason) || "Blocked by admin").slice(0, 200);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ ok: false, error: "date required (YYYY-MM-DD)." });
+  run("INSERT OR REPLACE INTO availability_overrides (date, reason) VALUES (?,?)", [date, reason]);
+  secEvent(req, "availability_override", "Day blocked: " + date);
+  res.json({ ok: true });
+});
+
+app.delete("/admin/api/availability/override/:date", requireAdmin, (req, res) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(req.params.date)) return res.status(400).json({ ok: false, error: "Invalid date." });
+  run("DELETE FROM availability_overrides WHERE date = ?", [req.params.date]);
+  secEvent(req, "availability_unoverride", "Day unblocked: " + req.params.date);
+  res.json({ ok: true });
+});
+
+app.patch("/admin/api/availability/pause", requireAdmin, (req, res) => {
+  const v = req.body && req.body.paused ? "1" : "0";
+  run("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", ["pause_bookings", v]);
+  secEvent(req, "availability_pause", v === "1" ? "New bookings paused" : "New bookings reopened");
+  res.json({ ok: true, paused: v === "1" });
+});
 
 app.get("/admin/api/dashboard", requireAdmin, (req, res) => {
   const s = {
@@ -635,7 +941,7 @@ app.patch("/admin/api/bookings/:id", requireAdmin, (req, res) => {
   const b = req.body || {};
   const set = [];
   const params = [];
-  ["status", "mode", "date", "time", "duration", "address", "customer", "email", "phone", "notes", "method"].forEach((k) => {
+  ["status", "mode", "date", "time", "duration", "address", "customer", "email", "phone", "notes", "method", "cancel_reason"].forEach((k) => {
     if (b[k] !== undefined) { set.push(k + " = ?"); params.push(String(b[k])); }
   });
   if (!set.length) return res.status(400).json({ ok: false, error: "Nothing to update." });
@@ -644,15 +950,20 @@ app.patch("/admin/api/bookings/:id", requireAdmin, (req, res) => {
   const booking = one("SELECT * FROM bookings WHERE id = ?", [req.params.id]);
   if (booking && b.status) {
     const st = String(b.status);
-    if (["paid", "refunded", "cancelled", "pending"].includes(st)) {
+    if (!allowedStatuses.includes(st)) return res.status(400).json({ ok: false, error: "Invalid status." });
+    if (["paid", "refunded", "cancelled", "pending", "to_pay", "completed", "confirmed"].includes(st)) {
       run("UPDATE payments SET status = ? WHERE ref = ?", [st, booking.ref]);
     }
+    secEvent(req, "booking_status", booking.ref + " → " + st);
   }
   res.json({ ok: true });
 });
 
 app.delete("/admin/api/bookings/:id", requireAdmin, (req, res) => {
+  const booking = one("SELECT * FROM bookings WHERE id = ?", [req.params.id]);
+  run("DELETE FROM payments WHERE ref = ?", [booking ? booking.ref : req.params.id]);
   run("DELETE FROM bookings WHERE id = ?", [req.params.id]);
+  if (booking) secEvent(req, "booking_erased", booking.ref + " (GDPR erasure)");
   res.json({ ok: true });
 });
 
@@ -776,10 +1087,13 @@ app.patch("/admin/api/settings", requireAdmin, (req, res) => {
          "hero_image_url", "flag_style", "travel_fee", "currency", "ref_prefix", "smtp_host", "smtp_port",
          "smtp_user", "smtp_pass", "smtp_from", "smtp_secure", "lockout_max", "lockout_minutes",
          "canton_surcharge", "doc_plain_word", "doc_cert_word", "doc_urgent_pct", "video_price",
-         "pay_twint_ref", "pay_iban", "pay_bank_name"].includes(k)) {
+         "pay_twint_ref", "pay_iban", "pay_bank_name",
+         "work_start", "work_end", "work_days", "lead_days", "visit_buffer_min", "video_buffer_min",
+         "doc_flat", "doc_flat_tax", "doc_last_minute", "doc_urgent_flat", "retention_months"].includes(k)) {
       run("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", [k, String(b[k]).slice(0, 400)]);
     }
   });
+  secEvent(req, "settings_change", "Settings updated: " + Object.keys(b).slice(0, 8).join(", "));
   res.json({ ok: true });
 });
 
@@ -793,11 +1107,14 @@ app.patch("/admin/api/documents/:id", requireAdmin, (req, res) => {
   const s = req.body && req.body.status;
   if (!["received", "in_progress", "done", "cancelled"].includes(s)) return res.status(400).json({ ok: false, error: "Invalid status." });
   run("UPDATE document_requests SET status = ? WHERE id = ?", [s, req.params.id]);
+  secEvent(req, "doc_status", "Document #" + req.params.id + " → " + s);
   res.json({ ok: true });
 });
 
 app.delete("/admin/api/documents/:id", requireAdmin, (req, res) => {
+  const d = one("SELECT ref FROM document_requests WHERE id = ?", [req.params.id]);
   run("DELETE FROM document_requests WHERE id = ?", [req.params.id]);
+  if (d) secEvent(req, "doc_erased", d.ref + " (GDPR erasure)");
   res.json({ ok: true });
 });
 
@@ -856,6 +1173,7 @@ app.get("/translation.html", (req, res) => res.sendFile(path.join(ROOT, "transla
 app.get("/booking.html", (req, res) => res.sendFile(path.join(ROOT, "booking.html")));
 app.get("/concierge.html", (req, res) => res.sendFile(path.join(ROOT, "concierge.html")));
 app.get("/confirmation.html", (req, res) => res.sendFile(path.join(ROOT, "confirmation.html")));
+app.get("/privacy.html", (req, res) => res.sendFile(path.join(ROOT, "privacy.html")));
 
 // error-cleanup to keep server from crashing
 app.use((err, req, res, next) => {
@@ -869,8 +1187,30 @@ app.use((err, req, res, next) => {
 
 ensureAdminSeed();
 
+// --------------------------------------------------------------------------
+// Maintenance — retention & housekeeping
+// --------------------------------------------------------------------------
+function runCleanup() {
+  try {
+    run("DELETE FROM sessions WHERE expires_at < datetime('now')");
+    run("DELETE FROM login_attempts WHERE created_at < datetime('now','-7 days')");
+    run("DELETE FROM security_events WHERE created_at < datetime('now','-90 days')");
+    run("DELETE FROM ip_blocks WHERE until < datetime('now')");
+    const rm = Math.max(1, NumberSetting("retention_months") || 24);
+    const cutoff = new Date(Date.now() - rm * 30.44 * 86400000).toISOString().slice(0, 19).replace("T", " ");
+    run("DELETE FROM bookings WHERE created_at < ? AND status IN ('completed','cancelled','refunded')", [cutoff]);
+    run("DELETE FROM payments WHERE ref NOT IN (SELECT ref FROM bookings)");
+    run("DELETE FROM document_requests WHERE created_at < ? AND status IN ('done','cancelled')", [cutoff]);
+    console.log("[cleanup] retention run complete (" + rm + " months)");
+  } catch (e) {
+    console.error("[cleanup] failed: " + e.message);
+  }
+}
+
 if (require.main === module) {
-  app.listen(PORT, () => {
+  runCleanup();
+  setInterval(runCleanup, 12 * 3600000);
+  app.listen(PORT, IS_PROD ? "127.0.0.1" : undefined, () => {
     console.log("");
     console.log("  Ssaaxcy Solutions — Swiss digital concierge");
     console.log("  Site    → http://localhost:" + PORT + "/");

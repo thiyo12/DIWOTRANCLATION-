@@ -189,7 +189,7 @@
 
   function renderDate(c) {
     var today = new Date();
-    var min = today.toISOString().split("T")[0];
+    var min = SSX.settings.minDate || today.toISOString().split("T")[0];
     var maxD = new Date(today.getTime() + 60 * 86400000);
     var max = maxD.toISOString().split("T")[0];
 
@@ -202,6 +202,7 @@
     var dateInput = c.querySelector("#b-date");
     var timesEl = c.querySelector("#b-times");
     var dursEl = c.querySelector("#b-durs");
+    var cache = {};
 
     SSX.durations.forEach(function (d) {
       var b = document.createElement("button");
@@ -212,6 +213,7 @@
         state.duration = d.mins;
         dursEl.querySelectorAll(".dur-pill").forEach(function (x) { x.classList.remove("selected"); });
         b.classList.add("selected");
+        renderTimes();
         renderSummary();
       };
       dursEl.appendChild(b);
@@ -223,41 +225,59 @@
         timesEl.innerHTML = '<p class="muted small">' + t("booking.chooseDateFirst") + '</p>';
         return;
       }
-      var isToday = state.date === today.toISOString().split("T")[0];
-      var nowHours = today.getHours() + today.getMinutes() / 60;
-      SSX.timeSlots.forEach(function (slot) {
-        var parts = slot.split(":");
-        var h = Number(parts[0]) + Number(parts[1]) / 60;
-        var disabled = isToday && h <= nowHours + 1.5;
+      timesEl.innerHTML = '<p class="muted small">' + t("common.loading") + '</p>';
+      var key = state.date + "|" + (state.mode || "video") + "|" + state.duration;
+      if (!cache[key]) {
+        SSX.request("GET", "/api/availability?date=" + encodeURIComponent(state.date) + "&mode=" + encodeURIComponent(state.mode || "video") + "&duration=" + state.duration)
+          .then(function (j) { cache[key] = j; paintSlots(j); })
+          .catch(function () { timesEl.innerHTML = '<p class="muted small">' + t("err.general") + '</p>'; });
+      } else {
+        paintSlots(cache[key]);
+      }
+    }
+
+    function paintSlots(j) {
+      timesEl.innerHTML = "";
+      if (!j || j.closed) {
+        if (j && j.beforeLead) timesEl.innerHTML = '<p class="muted small">' + t("booking.leadNote").replace("X", String(j.leadDays || 2)) + '</p>';
+        else if (j && j.reasons && j.reasons.indexOf("paused") > -1) timesEl.innerHTML = '<p class="muted small">' + t("booking.pausedNote") + '</p>';
+        else timesEl.innerHTML = '<p class="muted small">' + t("booking.noSlots") + '</p>';
+        return;
+      }
+      var slots = j.slots || [];
+      if (!slots.length) {
+        timesEl.innerHTML = '<p class="muted small">' + t("booking.noSlots") + '</p>';
+        return;
+      }
+      slots.forEach(function (slot) {
         var b = document.createElement("button");
         b.type = "button";
-        b.className = "time-slot" + (state.time === slot && !disabled ? " selected" : "");
+        b.className = "time-slot" + (state.time === slot ? " selected" : "");
         b.textContent = slot;
-        b.disabled = disabled;
-        if (!disabled) {
-          b.onclick = function () {
-            state.time = slot;
-            timesEl.querySelectorAll(".time-slot").forEach(function (x) { x.classList.remove("selected"); });
-            b.classList.add("selected");
-            renderSummary();
-          };
-        }
+        b.onclick = function () {
+          state.time = slot;
+          timesEl.querySelectorAll(".time-slot").forEach(function (x) { x.classList.remove("selected"); });
+          b.classList.add("selected");
+          renderSummary();
+        };
         timesEl.appendChild(b);
       });
     }
 
     dateInput.addEventListener("change", function () {
       var v = dateInput.value;
-      if (!v) { state.date = ""; renderTimes(); return; }
-      var day = new Date(v + "T00:00:00").getDay();
-      if (day === 0) {
+      if (!v) { state.date = ""; state.time = ""; renderTimes(); return; }
+      var day = new Date(v + "T00:00:00Z").getUTCDay();
+      if (SSX.settings.workDays.indexOf(day) === -1) {
         SSX.toast(t("err.sunday"), "error");
         dateInput.value = "";
         state.date = "";
+        state.time = "";
         renderTimes();
         return;
       }
       state.date = v;
+      state.time = "";
       renderTimes();
     });
 
@@ -296,6 +316,7 @@
           '<p class="tiny muted">' + SSX.icon("lock", 13) + " " + t("booking.payRef") + '</p>' +
         '</div>' +
       '</div>' +
+      '<label class="consent-line"><input type="checkbox" id="b-consent"> <span>' + t("privacy.consent") + ' (<a href="privacy.html" target="_blank" rel="noopener">' + t("privacy.link") + '</a>)</span></label>' +
       '<input type="text" name="company_website" id="b-hp" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">';
 
     var addrWrap = c.querySelector("#addr-wrap");
@@ -389,6 +410,7 @@
       else if (state.mode === "on_site" && !state.address.trim()) msg = t("err.address");
       if (!msg && !state.customer.trim()) msg = t("err.name");
       if (!msg && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(state.email)) msg = t("err.email");
+      if (!msg && !(document.getElementById("b-consent") && document.getElementById("b-consent").checked)) msg = t("privacy.consentRequired");
     }
     if (msg) {
       SSX.toast(msg, "error");
@@ -438,6 +460,7 @@
         phone: state.phone,
         notes: state.notes,
         method: state.method,
+        consent: document.getElementById("b-consent") ? document.getElementById("b-consent").checked : true,
         company_website: document.querySelector("#b-hp") ? document.querySelector("#b-hp").value : ""
       }).then(function (res) {
         finish({
@@ -449,11 +472,18 @@
           duration: res.duration,
           mode: res.mode,
           method: res.method,
-          status: res.status || "pending"
+          status: res.status || "requested"
         });
       }).catch(function (err) {
-        done();
-        SSX.toast(err.message || t("err.general"), "error");
+        if (err && err.nextFree && err.nextFree.date) {
+          state.date = err.nextFree.date;
+          state.time = err.nextFree.time;
+          setStep(2);
+          SSX.toast(t("booking.slotTaken") + " " + SSX.helpers.dateLabel(err.nextFree.date) + ", " + err.nextFree.time, "error");
+        } else {
+          done();
+          SSX.toast(err.message || t("err.general"), "error");
+        }
       });
     } else {
       setTimeout(function () {

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Availability — Ssaaxcy Admin</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="../assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <script src="js/admin.js"></script>
+  <script>
+    var CAP = null;
+    var DAYS = [];
+
+    document.addEventListener("DOMContentLoaded", function () {
+      SS.guard().then(function (ok) {
+        if (!ok) return;
+        SS.shell("availability", "Availability", "Capacity & working hours");
+        var c = document.getElementById("content");
+        c.innerHTML =
+          '<div class="stat-row">' +
+            '<div class="stat-card"><div class="label">' + SS.icon("clock", 15) + '&nbsp;Working hours</div><div class="value" id="s-hours">…</div></div>' +
+            '<div class="stat-card"><div class="label">' + SS.icon("shield", 15) + '&nbsp;New bookings</div><div class="value" id="s-pause">…</div></div>' +
+            '<div class="stat-card"><div class="label">' + SS.icon("calendar", 15) + '&nbsp;Minimum notice</div><div class="value" id="s-lead">…</div></div>' +
+          '</div>' +
+          '<div class="toolbar" style="margin-top:18px;">' +
+            '<label class="small" style="font-weight:800;min-width:80px;">Pause new bookings</label>' +
+            '<select class="input" id="s-pause-sel" style="max-width:180px;"><option value="0">Open for requests</option><option value="1">Paused</option></select>' +
+            '<button class="btn btn-dark btn-sm" id="btn-pause">Apply</button>' +
+            '<span class="muted small" style="margin-left:auto;">Click a day to block or unblock it.</span>' +
+          '</div>' +
+          '<div class="card" style="margin-top:14px;"><h3 class="card-title">' + SS.icon("calendar", 16) + ' ' + MONTH_LABEL() + '</h3>' +
+            '<div class="flex mb" style="gap:8px;">' +
+              '<button class="btn btn-light btn-sm" id="btn-prev">← Prev</button>' +
+              '<button class="btn btn-light btn-sm" id="btn-today">Today</button>' +
+              '<button class="btn btn-light btn-sm" id="btn-next">Next →</button>' +
+            '</div>' +
+            '<div class="av-grid" id="cal"></div>' +
+          '</div>' +
+          '<div class="card card-pad" style="margin-top:18px;"><h3 class="card-title">' + SS.icon("edit", 16) + ' Capacity settings</h3>' +
+            '<div class="two-col mx">' +
+            '<div class="field" style="padding-right:9px;"><label>Working day start</label><input class="input" id="s-start" type="time" value="08:30"></div>' +
+            '<div class="field"><label>Working day end</label><input class="input" id="s-end" type="time" value="16:30"></div></div>' +
+            '<div class="two-col mx">' +
+            '<div class="field" style="padding-right:9px;"><label>Minimum notice (days)</label><input class="input" id="s-lead-in" type="number" min="0" max="30" value="2"></div>' +
+            '<div class="field"><label>Working days (Sunday=0)</label><input class="input" id="s-days" placeholder="1,2,3,4,5,6" value="1,2,3,4,5,6"></div></div>' +
+            '<div class="two-col mx">' +
+            '<div class="field" style="padding-right:9px;"><label>On-site travel buffer (min)</label><input class="input" id="s-visit" type="number" min="0" max="180" value="60"></div>' +
+            '<div class="field"><label>Video buffer (min)</label><input class="input" id="s-video" type="number" min="0" max="180" value="15"></div></div>' +
+            '<button class="btn btn-dark btn-sm" id="btn-save">Save capacity settings</button>' +
+          '</div>';
+
+        document.getElementById("btn-pause").addEventListener("click", function () {
+          SS.patch("/admin/api/availability/pause", { paused: document.getElementById("s-pause-sel").value === "1" })
+            .then(function () { load(); SS.toast("Saved.", "success"); })
+            .catch(function (e) { SS.toast(e.message, "error"); });
+        });
+        document.getElementById("btn-save").addEventListener("click", saveCapacity);
+        document.getElementById("btn-prev").addEventListener("click", function () { shiftMonth(-1); });
+        document.getElementById("btn-next").addEventListener("click", function () { shiftMonth(1); });
+        document.getElementById("btn-today").addEventListener("click", function () { setFrom(today()); });
+
+        load();
+      });
+    });
+
+    var from = today();
+
+    function today() {
+      var d = new Date();
+      return d.toISOString().slice(0, 10);
+    }
+    function MONTH_LABEL() {
+      var d = new Date(from + "T00:00:00Z");
+      return d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    }
+    function setFrom(v) { from = v; document.querySelector(".card-title").textContent = MONTH_LABEL(); load(); }
+    function shiftMonth(n) {
+      var d = new Date(from + "T00:00:00Z");
+      d.setUTCMonth(d.getUTCMonth() + n);
+      setFrom(d.toISOString().slice(0, 10));
+    }
+
+    function load() {
+      SS.get("/admin/api/availability?from=" + from + "&days=35").then(function (d) {
+        CAP = d.settings || {};
+        DAYS = d.days || [];
+        render();
+      }).catch(function (e) { SS.toast(e.message, "error"); });
+    }
+
+    function dayTitle(ds) {
+      var d = new Date(ds + "T00:00:00Z");
+      return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+    }
+
+    function render() {
+      document.getElementById("s-hours").textContent = (CAP.workStart || "08:30") + " – " + (CAP.workEnd || "16:30");
+      document.getElementById("s-pause").textContent = CAP.paused ? "PAUSED" : "Open";
+      document.getElementById("s-lead").textContent = (CAP.leadDays || 2) + " days";
+      document.getElementById("s-pause-sel").value = CAP.paused ? "1" : "0";
+      document.getElementById("s-start").value = CAP.workStart || "08:30";
+      document.getElementById("s-end").value = CAP.workEnd || "16:30";
+      document.getElementById("s-lead-in").value = CAP.leadDays || 2;
+      document.getElementById("s-days").value = (CAP.workDays || [1, 2, 3, 4, 5, 6]).join(",");
+      document.getElementById("s-visit").value = CAP.visitBuffer || 60;
+      document.getElementById("s-video").value = CAP.videoBuffer || 15;
+
+      var cal = document.getElementById("cal");
+      cal.innerHTML = "";
+      DAYS.forEach(function (day) {
+        var isSunday = day.reasons.indexOf("closed_weekend") > -1;
+        var overridden = day.reasons.indexOf("override") > -1;
+        var cls = "av-day";
+        if (isSunday) cls += " av-sun";
+        if (overridden) cls += " av-blocked";
+        var busy = day.bookings.length;
+        var cell = document.createElement("div");
+        cell.className = cls;
+        var slots = busy ? day.bookings.map(function (b) { return b.time; }).join(", ") : "";
+        cell.innerHTML =
+          "<div class='av-date'>" + dayTitle(day.date) + "</div>" +
+          (busy ? "<div class='av-bookings'>" + busy + " booking" + (busy > 1 ? "s" : "") + "<small>" + SS.esc(slots) + "</small></div>" : "") +
+          (overridden ? "<div class='av-reason'>" + SS.icon("shield", 12) + " " + SS.esc(day.overrideReason) + "</div>" : "") +
+          (isSunday ? "<div class='av-reason'>Weekend</div>" : "") +
+          "<div class='av-action'>" + (overridden ? "Click to unblock" : "Click to block") + "</div>";
+        cell.addEventListener("click", function () { toggleOverride(day); });
+        cal.appendChild(cell);
+      });
+    }
+
+    function toggleOverride(day) {
+      if (day.reasons.indexOf("override") > -1) {
+        SS.confirm("Unblock " + day.date + "?", function () {
+          SS.del("/admin/api/availability/override/" + day.date).then(function () { load(); SS.toast("Day unblocked.", "success"); });
+        });
+      } else {
+        var m = SS.modal(
+          '<h2>Block ' + day.date + '</h2>' +
+          '<p class="muted small">Customers will no longer see this day. Existing bookings stay visible to you.</p>' +
+          '<div class="field mt"><label>Reason (shown in your calendar)</label><input class="input" id="ov-reason" placeholder="e.g. Holiday, training, appointment"></div>' +
+          '<button class="btn btn-red btn-block" id="ov-go">Block this day</button>'
+        );
+        m.querySelector("#ov-go").onclick = function () {
+          SS.post("/admin/api/availability/override", { date: day.date, reason: m.querySelector("#ov-reason").value || "Blocked by admin" })
+            .then(function () { m.remove(); load(); SS.toast("Day blocked.", "success"); })
+            .catch(function (e) { SS.toast(e.message, "error"); });
+        };
+      }
+    }
+
+    function saveCapacity() {
+      SS.patch("/admin/api/settings", {
+        work_start: document.getElementById("s-start").value,
+        work_end: document.getElementById("s-end").value,
+        lead_days: document.getElementById("s-lead-in").value,
+        work_days: document.getElementById("s-days").value,
+        visit_buffer_min: document.getElementById("s-visit").value,
+        video_buffer_min: document.getElementById("s-video").value
+      }).then(function () { load(); SS.toast("Capacity settings saved.", "success"); })
+        .catch(function (e) { SS.toast(e.message, "error"); });
+    }
+  </script>
+  <style>
+    .av-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+    .av-day { border:1px solid var(--line,#e5e0d6); border-radius:10px; padding:10px; min-height:84px; cursor:pointer; background:#fff; transition:box-shadow .15s; }
+    .av-day:hover { box-shadow:0 3px 10px rgba(0,0,0,.08); }
+    .av-day.av-sun { background:#f7f6f3; }
+    .av-day.av-blocked { background:#fbeceb; border-color:#e3a9a4; }
+    .av-date { font-weight:800; font-size:.85rem; margin-bottom:6px; }
+    .av-bookings { font-size:.75rem; color:#7c6a2f; font-weight:600; }
+    .av-bookings small { display:block; color:#8a8f98; font-weight:400; margin-top:2px; }
+    .av-reason { font-size:.72rem; color:#a4443c; margin-top:4px; display:flex; align-items:center; gap:4px; }
+    .av-action { font-size:.7rem; color:#9aa1ab; margin-top:6px; }
+    .av-sun .av-action { display:none; }
+  </style>
+</body>
+</html>
