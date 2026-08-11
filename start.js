@@ -26,8 +26,11 @@ try {
 }
 
 if (sqliteOk) {
-  require("./server.js");
-  return;
+  // server.js only binds the port when it is the main module (require.main),
+  // so re-spawn it as a child instead of require()ing it from this launcher.
+  const res = spawnSync(process.execPath, ["server.js"], { stdio: "inherit" });
+  if (res.error) throw res.error;
+  process.exit(res.status || 0);
 }
 
 // Node 22.5x-23.x without the flag — re-run with --experimental-sqlite.
