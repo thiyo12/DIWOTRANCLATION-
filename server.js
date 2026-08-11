@@ -1211,7 +1211,7 @@ function runCleanup() {
 if (require.main === module) {
   runCleanup();
   setInterval(runCleanup, 12 * 3600000);
-  app.listen(PORT, IS_PROD ? "127.0.0.1" : undefined, () => {
+  app.listen(PORT, process.env.HOST || (IS_PROD ? "127.0.0.1" : undefined), () => {
     console.log("");
     console.log("  Ssaaxcy Solutions — Swiss digital concierge");
     console.log("  Site    → http://localhost:" + PORT + "/");
