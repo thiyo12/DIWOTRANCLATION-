@@ -1160,6 +1160,7 @@ app.patch("/admin/api/payments/:id", requireAdmin, (req, res) => {
 
 // ============================================================== Site pages & static
 app.use("/js", express.static(path.join(ROOT, "js")));
+app.get("/healthz", (req, res) => res.set("Cache-Control", "no-store").send("ok"));
 app.use("/css", express.static(path.join(ROOT, "css")));
 app.use("/assets", express.static(path.join(ROOT, "assets")));
 app.use("/admin", express.static(path.join(ROOT, "admin")));
