@@ -52,6 +52,7 @@
       return null;
     }
 
+    var curBooking = null;
     function loadBooking(ref, cb) {
       if (SSX.http) {
         var path = ref.indexOf("SSXD") === 0 ? "/api/documents/" : "/api/bookings/";
@@ -72,6 +73,7 @@
       document.getElementById("ref-pill").textContent = ref;
 
       loadBooking(ref, function (b, doc) {
+        curBooking = b;
         var table = document.getElementById("detail-table");
         if (!b) {
           table.innerHTML = '<div style="padding:26px;text-align:center;" class="muted">' + SSX.t("confirm.notFound") + '</div>';
@@ -98,7 +100,7 @@
           row(SSX.t("booking.timeLabel"), (b.time || "—") + (b.duration ? " · " + b.duration + " min" : ""));
           row(SSX.t("booking.modeLabel"), b.mode === "on_site" ? SSX.t("common.inPerson") : SSX.t("common.video"));
           if (b.mode === "on_site" && b.address) row(SSX.t("field.address"), b.address);
-row(SSX.t("booking.total"), SSX.helpers.fmt(b.total));
+          row(SSX.t("booking.total"), SSX.helpers.fmt(b.total));
           row(SSX.t("booking.payLabel"), b.method === "twint" ? "TWINT" : SSX.t("pay.bank"));
           var stRow = document.createElement("div");
           stRow.className = "row";
@@ -177,6 +179,9 @@ row(SSX.t("booking.total"), SSX.helpers.fmt(b.total));
           .catch(function () {});
       }, 4000);
     }
+    document.addEventListener("ssx:settings", function () {
+      if (curBooking) renderPayBox(curBooking);
+    });
   </script>
 </body>
 </html>

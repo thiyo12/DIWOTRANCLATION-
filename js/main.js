@@ -79,6 +79,31 @@ SSX.applySettings = function (s) {
   });
 };
 
+SSX.catalogKey = null;
+
+SSX.catalogSignature = function (j) {
+  return JSON.stringify([
+    j && j.settings,
+    j && j.services ? j.services.map(function (s) { return [s.id, s.price]; }) : null
+  ]);
+};
+
+SSX.syncServices = function (list) {
+  if (!list || !list.length) return;
+  var byId = {};
+  SSX.services.forEach(function (s) { byId[s.id] = s; });
+  list.forEach(function (sv) {
+    if (byId[sv.id] && sv.price !== undefined && sv.price !== null) byId[sv.id].price = Number(sv.price);
+  });
+};
+
+SSX.applyCatalog = function (j) {
+  if (!j) return;
+  if (j.settings) SSX.applySettings(j.settings);
+  if (j.services) SSX.syncServices(j.services);
+  SSX.catalogKey = SSX.catalogSignature(j);
+};
+
 SSX.cantonOptions = function (selected) {
   const cantons = ["Zurich", "Aargau", "Appenzell Ausserrhoden", "Appenzell Innerrhoden", "Basel-Landschaft", "Basel-Stadt", "Bern", "Fribourg", "Geneva", "Glarus", "Graubünden", "Jura", "Lucerne", "Neuchâtel", "Nidwalden", "Obwalden", "Schaffhausen", "Schwyz", "Solothurn", "St. Gallen", "Thurgau", "Ticino", "Uri", "Valais", "Vaud", "Zug"];
   return cantons.map(function (c) {
@@ -259,11 +284,24 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 SSX.boot = function () {
-  fetch("/api/catalog")
-    .then(function (r) { return r.json(); })
-    .then(function (j) { SSX.applySettings(j && j.settings); })
+  SSX.request("GET", "/api/catalog")
+    .then(SSX.applyCatalog)
     .catch(function () {})
     .then(SSX.renderShell);
+  SSX.pollCatalog();
+};
+
+SSX.pollCatalog = function () {
+  if (!SSX.http) return;
+  setInterval(function () {
+    SSX.request("GET", "/api/catalog").then(function (j) {
+      var key = SSX.catalogSignature(j);
+      if (key === SSX.catalogKey) return;
+      SSX.applyCatalog(j);
+      SSX.renderShell();
+      document.dispatchEvent(new CustomEvent("ssx:settings", { detail: j }));
+    }).catch(function () {});
+  }, 8000);
 };
 
 SSX.renderShell = function () {
@@ -281,14 +319,19 @@ SSX.renderShell = function () {
   }
 
   if (SSX.settings.whatsapp) {
-    const wa = document.createElement("a");
-    wa.className = "wa-float";
-    wa.href = SSX.settings.whatsapp;
-    wa.target = "_blank";
-    wa.rel = "noopener";
-    wa.setAttribute("aria-label", "WhatsApp");
-    wa.innerHTML = SSX.icon("whatsapp", 22);
-    document.body.appendChild(wa);
+    if (!document.querySelector(".wa-float")) {
+      const wa = document.createElement("a");
+      wa.className = "wa-float";
+      wa.href = SSX.settings.whatsapp;
+      wa.target = "_blank";
+      wa.rel = "noopener";
+      wa.setAttribute("aria-label", "WhatsApp");
+      wa.innerHTML = SSX.icon("whatsapp", 22);
+      document.body.appendChild(wa);
+    }
+  } else {
+    const wa = document.querySelector(".wa-float");
+    if (wa) wa.remove();
   }
 
   if (!document.querySelector(".bg-fx")) {

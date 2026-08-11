@@ -121,6 +121,12 @@
       renderGrid("all");
       renderPrices();
     });
+
+    document.addEventListener("ssx:settings", function () {
+      renderFilters(document.querySelector("#filters .chip.active") ? document.querySelector("#filters .chip.active").textContent : "all");
+      renderGrid("all");
+      renderPrices();
+    });
   </script>
 </body>
 </html>

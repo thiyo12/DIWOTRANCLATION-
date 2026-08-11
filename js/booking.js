@@ -472,4 +472,8 @@
   }
 
   document.addEventListener("DOMContentLoaded", init);
+  document.addEventListener("ssx:settings", function () {
+    if (state.step === 3) renderSummary();
+    else render();
+  });
 })();
