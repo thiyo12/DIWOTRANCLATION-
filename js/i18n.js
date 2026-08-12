@@ -343,6 +343,8 @@ window.SSX = window.SSX || {};
     "track.bookingWhen": { en: "Date & time", de: "Datum & Zeit", ta: "தேதி & நேரம்" },
     "track.bookingMode": { en: "Mode", de: "Modus", ta: "முறை" },
     "track.bookingService": { en: "Service", de: "Leistung", ta: "சேவை" },
+    "track.sendWa": { en: "Send booking to WhatsApp", de: "Buchung an WhatsApp senden", ta: "வாட்ஸ்அப்பிற்கு அனுப்பு" },
+    "common.download": { en: "Download", de: "Herunterladen", ta: "பதிவிறக்கு" },
 
     // privacy
     "privacy.link": { en: "Privacy policy", de: "Datenschutzerklärung", ta: "தனியுரிமைக் கொள்கை" },

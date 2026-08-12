@@ -68,11 +68,11 @@
       var k = STATUS[s] || "track.stReceived";
       var good = s === "done" || s === "completed" || s === "paid";
       var bad = s === "cancelled" || s === "refunded";
-      return '<span class="pay-badge ' + (good ? "pay-badge--ok" : bad ? "pay-badge--bad" : "pay-badge--wait") + '">' + SSX.esc(SSX.t(k)) + "</span>";
+      return '<span class="pay-badge ' + (good ? "pay-badge--ok" : bad ? "pay-badge--bad" : "pay-badge--wait") + '">' + SSX.helpers.esc(SSX.t(k)) + "</span>";
     }
 
     function row(l, v) {
-      return '<div class="row"><span>' + SSX.esc(l) + "</span><b>" + v + "</b></div>";
+      return '<div class="row"><span>' + SSX.helpers.esc(l) + "</span><b>" + v + "</b></div>";
     }
 
     function show(html) {
@@ -95,6 +95,12 @@
       return SSX.request("GET", path).then(function (j) { return j; });
     }
 
+    function waShare(text) {
+      var n = SSX.settings.whatsapp;
+      if (!n) return "";
+      return SSX.waMe(n) + "?text=" + encodeURIComponent(text);
+    }
+
     function lookup(ref) {
       var r = document.getElementById("tr-result");
       r.innerHTML = '<p class="muted small">' + SSX.t("common.loading") + "</p>";
@@ -109,7 +115,7 @@
         var html = '<div class="card detail-table"><h3 style="margin-bottom:10px;">' + SSX.helpers.esc(b.doc_type_name || b.doc_type || "—") +
           ' · <span class="ref-pill" style="font-size:0.9rem;">' + SSX.helpers.esc(b.ref) + "</span></h3>";
         html += row(SSX.t("confirm.status"), badge(b.status));
-        html += row(SSX.t("booking.languageLabel"), SSX.esc(b.from_lang) + " → " + SSX.esc(b.to_lang));
+        html += row(SSX.t("booking.languageLabel"), SSX.helpers.esc(b.from_lang) + " → " + SSX.helpers.esc(b.to_lang));
         html += "</div>";
         if (b.status === "done" && b.hasResult) {
           html += '<div class="dl-row"><a class="btn btn-primary" href="/api/documents/' + encodeURIComponent(ref) + '/result">' +
@@ -123,7 +129,7 @@
         var html = '<div class="card detail-table"><h3 style="margin-bottom:10px;">' + SSX.helpers.esc(b.service_name || "—") +
           ' · <span class="ref-pill" style="font-size:0.9rem;">' + SSX.helpers.esc(b.ref) + "</span></h3>";
         html += row(SSX.t("confirm.status"), badge(b.status));
-        html += row(SSX.t("track.bookingWhen"), SSX.helpers.dateLabel(b.date) + ", " + SSX.esc(b.time));
+        html += row(SSX.t("track.bookingWhen"), SSX.helpers.dateLabel(b.date) + ", " + SSX.helpers.esc(b.time));
         html += row(SSX.t("booking.modeLabel"), b.mode === "on_site" ? SSX.t("common.inPerson") : SSX.t("common.video"));
         html += "</div>";
         if (b.files && b.files.length) {
@@ -132,6 +138,10 @@
             html += row(SSX.fileLabel(f), '<a href="/api/bookings/' + encodeURIComponent(ref) + "/file/" + encodeURIComponent(f) + '">' + SSX.icon("download", 14) + " " + SSX.t("common.download") + "</a>");
           });
           html += "</div>";
+        }
+        var wa = waShare("Booking " + b.ref + "\n" + (b.service_name || "") + "\n" + b.date + " " + b.time + "\nMode: " + (b.mode === "on_site" ? SSX.t("common.inPerson") : SSX.t("common.video")) + "\nStatus: " + SSX.t(STATUS[b.status] || "track.stReceived") + "\nRef: " + b.ref);
+        if (wa) {
+          html += '<div class="dl-row"><a class="btn btn-light" href="' + wa + '" target="_blank" rel="noopener">' + SSX.icon("whatsapp", 16) + " " + SSX.t("track.sendWa") + "</a></div>";
         }
         show(html);
         contact();
