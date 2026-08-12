@@ -269,6 +269,7 @@ SSX.shellHeader = function () {
       '<a href="translation.html" data-i18n="nav.translation"' + is("translation.html") + ">" + SSX.t("nav.translation") + "</a>" +
       '<a href="fillform.html" data-i18n="nav.fillForm"' + is("fillform.html") + ">" + SSX.t("nav.fillForm") + "</a>" +
       '<a href="concierge.html" data-i18n="nav.concierge"' + is("concierge.html") + ">" + SSX.t("nav.concierge") + "</a>" +
+      '<a href="track.html" data-i18n="track.nav"' + is("track.html") + ">" + SSX.t("track.nav") + "</a>" +
       '<a href="booking.html" class="btn btn-primary nav-cta" data-i18n="nav.bookNow">' + SSX.t("nav.bookNow") + "</a>" +
     "</nav>" +
     '<span class="header-right">' +

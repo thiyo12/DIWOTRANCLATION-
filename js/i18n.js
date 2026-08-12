@@ -320,7 +320,7 @@ window.SSX = window.SSX || {};
     "upload.err": { en: "Upload failed. Check the file type and size.", de: "Upload fehlgeschlagen. Prüfen Sie Typ und Grösse.", ta: "பதிவேற்றம் தோல்வி. கோப்பு வகை/அளவைச் சரிபார்க்கவும்." },
 
     // tracking page
-    "track.nav": { en: "Track your request", de: "Anfrage verfolgen", ta: "கோரிக்கையைக் கண்காணிக்கவும்" },
+    "track.nav": { en: "Track", de: "Verfolgen", ta: "கண்காணிப்பு" },
     "track.title": { en: "Track your request", de: "Anfrage verfolgen", ta: "உங்கள் கோரிக்கையைக் கண்காணிக்கவும்" },
     "track.subtitle": { en: "Enter your reference number to check the status and download your finished documents.", de: "Geben Sie Ihre Referenznummer ein, um den Status zu prüfen und fertige Dokumente herunterzuladen.", ta: "நிலையைப் பார்க்கவும் முடிந்த ஆவணங்களைப் பதிவிறக்கவும் உங்கள் குறிப்பு எண்ணை உள்ளிடவும்." },
     "track.inputPh": { en: "e.g. SSX-AB12CD or SSXD-AB12CD", de: "z.B. SSX-AB12CD oder SSXD-AB12CD", ta: "எ.கா. SSX-AB12CD அல்லது SSXD-AB12CD" },
