@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ssaaxcy Solutions — Track your request</title>
+  <meta name="description" content="Check the status of your booking or translation request and download finished documents.">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="assets/brand/favicon.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <header class="site-header" data-slot="header">
+    <div class="container header-inner"></div>
+  </header>
+
+  <section class="section-tight">
+    <div class="container" style="max-width:680px;">
+      <span class="eyebrow" data-i18n="track.title"></span>
+      <h1 class="section-title" style="font-size:1.9rem;" data-i18n="track.title"></h1>
+      <p class="muted" style="margin-bottom:22px;" data-i18n="track.subtitle"></p>
+
+      <form id="tr-form" class="two-col" novalidate>
+        <div class="field" style="flex:1;">
+          <label data-i18n="track.refLabel"></label>
+          <input class="input" id="tr-ref" placeholder="" autocomplete="off" style="text-transform:uppercase;">
+        </div>
+        <div class="field" style="align-self:flex-end;">
+          <button type="submit" class="btn btn-primary" id="tr-go" data-i18n="track.lookup"></button>
+        </div>
+      </form>
+
+      <div id="tr-result" style="margin-top:24px;"></div>
+
+      <div class="card detail-table" id="tr-contact" style="margin-top:26px;display:none;">
+        <div class="sum-empty" style="text-align:left;">
+          <h3 style="margin-bottom:6px;" data-i18n="track.contactTitle"></h3>
+          <p class="muted tiny" data-i18n="track.keepRef"></p>
+          <div class="contact-strip">
+            <a class="btn btn-light btn-sm" id="tr-mail" href="#">✉ <span data-i18n="track.emailUs"></span></a>
+            <a class="btn btn-light btn-sm" id="tr-wa" href="#" target="_blank" rel="noopener" style="display:none;">WhatsApp</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer" data-slot="footer"></footer>
+
+  <script src="js/icons.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/main.js"></script>
+  <script>
+    SSX.injectLangSwitcher(document);
+
+    var STATUS = {
+      new: "track.stNew", received: "track.stReceived", in_progress: "track.stInProgress",
+      requested: "track.stRequested", to_pay: "track.stRequested", pending: "track.stInProgress",
+      confirmed: "track.stInProgress", paid: "track.stInProgress", completed: "track.stDone",
+      done: "track.stDone", cancelled: "track.stCancelled", refunded: "track.stCancelled"
+    };
+
+    function badge(s) {
+      var k = STATUS[s] || "track.stReceived";
+      var good = s === "done" || s === "completed" || s === "paid";
+      var bad = s === "cancelled" || s === "refunded";
+      return '<span class="pay-badge ' + (good ? "pay-badge--ok" : bad ? "pay-badge--bad" : "pay-badge--wait") + '">' + SSX.esc(SSX.t(k)) + "</span>";
+    }
+
+    function row(l, v) {
+      return '<div class="row"><span>' + SSX.esc(l) + "</span><b>" + v + "</b></div>";
+    }
+
+    function show(html) {
+      document.getElementById("tr-result").innerHTML = html;
+    }
+
+    function contact() {
+      var el = document.getElementById("tr-contact");
+      if (!SSX.settings.supportEmail) return;
+      el.style.display = "";
+      document.getElementById("tr-mail").href = "mailto:" + SSX.settings.supportEmail;
+      if (SSX.settings.whatsapp) {
+        var wa = document.getElementById("tr-wa");
+        wa.href = SSX.waMe(SSX.settings.whatsapp);
+        wa.style.display = "";
+      }
+    }
+
+    function tryGet(path) {
+      return SSX.request("GET", path).then(function (j) { return j; });
+    }
+
+    function lookup(ref) {
+      var r = document.getElementById("tr-result");
+      r.innerHTML = '<p class="muted small">' + SSX.t("common.loading") + "</p>";
+      var isDoc = ref.indexOf("SSXD") === 0;
+
+      function notFound() {
+        show('<div class="card card-pad"><p class="muted">' + SSX.t("track.notFound") + "</p></div>");
+        contact();
+      }
+
+      function renderDoc(b) {
+        var html = '<div class="card detail-table"><h3 style="margin-bottom:10px;">' + SSX.helpers.esc(b.doc_type_name || b.doc_type || "—") +
+          ' · <span class="ref-pill" style="font-size:0.9rem;">' + SSX.helpers.esc(b.ref) + "</span></h3>";
+        html += row(SSX.t("confirm.status"), badge(b.status));
+        html += row(SSX.t("booking.languageLabel"), SSX.esc(b.from_lang) + " → " + SSX.esc(b.to_lang));
+        html += "</div>";
+        if (b.status === "done" && b.hasResult) {
+          html += '<div class="dl-row"><a class="btn btn-primary" href="/api/documents/' + encodeURIComponent(ref) + '/result">' +
+            SSX.icon("download", 16) + " " + SSX.t("track.download") + "</a></div>";
+        }
+        show(html);
+        contact();
+      }
+
+      function renderBooking(b) {
+        var html = '<div class="card detail-table"><h3 style="margin-bottom:10px;">' + SSX.helpers.esc(b.service_name || "—") +
+          ' · <span class="ref-pill" style="font-size:0.9rem;">' + SSX.helpers.esc(b.ref) + "</span></h3>";
+        html += row(SSX.t("confirm.status"), badge(b.status));
+        html += row(SSX.t("track.bookingWhen"), SSX.helpers.dateLabel(b.date) + ", " + SSX.esc(b.time));
+        html += row(SSX.t("booking.modeLabel"), b.mode === "on_site" ? SSX.t("common.inPerson") : SSX.t("common.video"));
+        html += "</div>";
+        if (b.files && b.files.length) {
+          html += '<div class="card detail-table" style="margin-top:14px;"><h3 style="margin-bottom:10px;">' + SSX.t("track.yourFiles") + "</h3>";
+          b.files.forEach(function (f) {
+            html += row(SSX.fileLabel(f), '<a href="/api/bookings/' + encodeURIComponent(ref) + "/file/" + encodeURIComponent(f) + '">' + SSX.icon("download", 14) + " " + SSX.t("common.download") + "</a>");
+          });
+          html += "</div>";
+        }
+        show(html);
+        contact();
+      }
+
+      function renderConcierge(b) {
+        var html = '<div class="card detail-table"><h3 style="margin-bottom:10px;">' + SSX.helpers.esc(b.service || b.title || "—") +
+          ' · <span class="ref-pill" style="font-size:0.9rem;">' + SSX.helpers.esc(b.ref) + "</span></h3>";
+        html += row(SSX.t("confirm.status"), badge(b.status));
+        html += "</div>";
+        if (b.status === "done" && b.hasResult) {
+          html += '<div class="dl-row"><a class="btn btn-primary" href="/api/concierge/' + encodeURIComponent(ref) + '/result">' +
+            SSX.icon("download", 16) + " " + SSX.t("track.download") + "</a></div>";
+        }
+        show(html);
+        contact();
+      }
+
+      if (isDoc) {
+        return tryGet("/api/documents/" + encodeURIComponent(ref)).then(function (j) {
+          renderDoc(j.request);
+        }).catch(notFound);
+      }
+      return tryGet("/api/bookings/" + encodeURIComponent(ref)).then(function (j) {
+        renderBooking(j.booking);
+      }).catch(function () {
+        return tryGet("/api/concierge/" + encodeURIComponent(ref)).then(function (j) {
+          renderConcierge(j.request);
+        }).catch(notFound);
+      });
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      var q = new URLSearchParams(window.location.search);
+      var auto = (q.get("ref") || "").toUpperCase().trim();
+      var inp = document.getElementById("tr-ref");
+      document.getElementById("tr-form").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var ref = inp.value.toUpperCase().trim();
+        if (ref) lookup(ref);
+      });
+      if (auto) { inp.value = auto; lookup(auto); }
+    });
+  </script>
+</body>
+</html>
