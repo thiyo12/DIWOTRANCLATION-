@@ -179,6 +179,9 @@ function migrate() {
   if (!bCols.includes("consent")) {
     d.exec("ALTER TABLE bookings ADD COLUMN consent INTEGER DEFAULT 0");
   }
+  if (!bCols.includes("files")) {
+    d.exec("ALTER TABLE bookings ADD COLUMN files TEXT DEFAULT ''");
+  }
   const sCols = d.prepare("PRAGMA table_info(sessions)").all().map((c) => c.name);
   if (!sCols.includes("csrf_token")) d.exec("ALTER TABLE sessions ADD COLUMN csrf_token TEXT DEFAULT ''");
   if (!sCols.includes("ua_hash")) d.exec("ALTER TABLE sessions ADD COLUMN ua_hash TEXT DEFAULT ''");
@@ -186,8 +189,10 @@ function migrate() {
   if (!sCols.includes("kind")) d.exec("ALTER TABLE sessions ADD COLUMN kind TEXT DEFAULT 'admin'");
   const dCols = d.prepare("PRAGMA table_info(document_requests)").all().map((c) => c.name);
   if (!dCols.includes("consent")) d.exec("ALTER TABLE document_requests ADD COLUMN consent INTEGER DEFAULT 0");
+  if (!dCols.includes("result_file")) d.exec("ALTER TABLE document_requests ADD COLUMN result_file TEXT DEFAULT ''");
   const cCols = d.prepare("PRAGMA table_info(concierge)").all().map((c) => c.name);
   if (!cCols.includes("consent")) d.exec("ALTER TABLE concierge ADD COLUMN consent INTEGER DEFAULT 0");
+  if (!cCols.includes("result_file")) d.exec("ALTER TABLE concierge ADD COLUMN result_file TEXT DEFAULT ''");
   const ins = d.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)");
   SEED_SETTINGS.forEach(([k, v]) => ins.run(k, v));
 }

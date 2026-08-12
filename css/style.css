@@ -753,3 +753,15 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 600; line-height: 1.
   to { transform: translate3d(1.6%, 1.2%, 0) scale(1.07); }
 }
 
+
+/* ---- File upload ---- */
+.upload-box { border: 1.5px dashed var(--line-strong); border-radius: var(--radius); padding: 18px 16px; background: var(--white); position: relative; }
+.upload-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.upload-cta { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--swiss-red); margin-bottom: 6px; }
+.upload-box .tiny { margin: 0; }
+.file-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.file-chip { display: inline-flex; align-items: center; gap: 6px; background: #f6f2e8; border: 1px solid var(--line); border-radius: 999px; padding: 5px 8px 5px 12px; font-size: 0.82rem; color: var(--ink); }
+.file-chip-x { border: 0; background: transparent; color: var(--ink-soft); cursor: pointer; font-size: 0.78rem; padding: 2px; line-height: 1; }
+.file-chip-x:hover { color: var(--swiss-red); }
+.contact-strip { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 14px; }
+.dl-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 14px; justify-content: center; }

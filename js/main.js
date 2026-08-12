@@ -174,8 +174,37 @@ SSX.request = function (method, path, body) {
   });
 };
 
+// Upload files (FormData) — returns the stored file names
+SSX.upload = function (files) {
+  var fd = new FormData();
+  Array.prototype.forEach.call(files || [], function (f) { fd.append("files", f); });
+  return fetch("/api/upload", { method: "POST", body: fd }).then(function (r) {
+    return r.json().then(function (j) {
+      if (!r.ok) throw new Error(j.error || ("Upload failed (" + r.status + ")"));
+      return j;
+    });
+  });
+};
+
+// Presentable name for a stored upload (hex.pdf -> sensible label)
+SSX.fileLabel = function (name) {
+  var s = String(name || "");
+  if (s.indexOf(".") < 0) return s;
+  var ext = s.split(".").pop().toUpperCase();
+  var byExt = { PDF: "PDF", DOC: "Word", DOCX: "Word", JPG: "Photo", JPEG: "Photo", PNG: "Image", HEIC: "Photo", HEIF: "Photo", TXT: "Text" };
+  return (byExt[ext] || ext) + " file";
+};
+
 // true when served over http(s) (fetch available), false when opened from disk
 SSX.http = typeof fetch === "function";
+
+// WhatsApp link: accepts a full URL or a phone number -> https://wa.me/<digits>
+SSX.waMe = function (v) {
+  if (!v) return "";
+  if (/^https?:\/\//i.test(String(v))) return String(v);
+  const digits = String(v).replace(/[^\d]/g, "");
+  return digits ? "https://wa.me/" + digits : "";
+};
 
 // ---------------------------------------------------------------- toast
 SSX.toast = function (msg, type) {
@@ -294,7 +323,8 @@ SSX.shellFooter = function () {
       '<div class="footer-col"><h4>' + SSX.t("nav.contact") + '</h4><ul>' +
         '<li><a href="mailto:' + SSX.helpers.esc(SSX.settings.supportEmail) + '">' + SSX.helpers.esc(SSX.settings.supportEmail) + "</a></li>" +
         '<li><a href="tel:' + SSX.helpers.esc(String(SSX.settings.supportPhone).replace(/\s/g, "")) + '">' + SSX.helpers.esc(SSX.settings.supportPhone) + "</a></li>" +
-        '<li>' + (SSX.settings.whatsapp ? '<a href="' + SSX.helpers.esc(SSX.settings.whatsapp) + '" target="_blank" rel="noopener">WhatsApp</a>' : "") + "</li>" +
+        '<li>' + (SSX.settings.whatsapp ? '<a href="' + SSX.helpers.esc(SSX.waMe(SSX.settings.whatsapp)) + '" target="_blank" rel="noopener">WhatsApp</a>' : "") + "</li>" +
+        '<li><a href="track.html">' + SSX.t("track.nav") + "</a></li>" +
         '<li><a href="privacy.html">' + SSX.t("privacy.link") + "</a></li>" +
         '<li class="footer-addr">' + SSX.icon("map-pin", 13) + " " + SSX.t("footer.addr") + "</li>" +
       "</ul></div>" +
@@ -351,7 +381,7 @@ SSX.renderShell = function () {
     if (!document.querySelector(".wa-float")) {
       const wa = document.createElement("a");
       wa.className = "wa-float";
-      wa.href = SSX.settings.whatsapp;
+      wa.href = SSX.waMe(SSX.settings.whatsapp);
       wa.target = "_blank";
       wa.rel = "noopener";
       wa.setAttribute("aria-label", "WhatsApp");

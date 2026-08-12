@@ -16,6 +16,7 @@
     phone: "",
     notes: "",
     method: "twint",
+    files: [],
     submitting: false
   };
 
@@ -309,6 +310,12 @@
         '</div>' +
       '</div>' +
       '<div class="field"><label>' + t("booking.note") + '</label><textarea class="textarea" id="b-notes" placeholder="' + t("booking.notePh") + '">' + SSX.helpers.esc(state.notes) + '</textarea></div>' +
+      '<div class="field"><label>' + t("upload.label") + '</label>' +
+        '<div class="upload-box"><input type="file" id="b-files" class="upload-input" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.heic,.heif,.txt">' +
+        '<div class="upload-cta">' + SSX.icon("upload", 16) + " " + t("upload.choose") + '</div>' +
+        '<p class="tiny muted">' + t("upload.hint") + '</p></div>' +
+        '<div id="b-filelist" class="file-chips"></div>' +
+      '</div>' +
       '<div class="field"><label>' + t("booking.payLabel") + '</label>' +
         '<div class="pay-card" data-m="twint"><span class="pay-radio"></span><div><h4>TWINT</h4><p>' + t("pay.twintBody") + '</p></div></div>' +
         '<div class="pay-card" data-m="bank"><span class="pay-radio"></span><div><h4>' + t("pay.bank") + '</h4><p>' + t("pay.bankBody") + '</p></div></div>' +
@@ -356,6 +363,41 @@
     email.addEventListener("input", function () { state.email = email.value; });
     phone.addEventListener("input", function () { state.phone = phone.value; });
     notes.addEventListener("input", function () { state.notes = notes.value; });
+
+    var fileInput = c.querySelector("#b-files");
+    var fileList = c.querySelector("#b-filelist");
+    function paintFiles() {
+      fileList.innerHTML = "";
+      state.files.forEach(function (f, i) {
+        var chip = document.createElement("span");
+        chip.className = "file-chip";
+        chip.innerHTML = SSX.icon("file", 13) + " " + SSX.helpers.esc(SSX.fileLabel(f)) +
+          '<button type="button" class="file-chip-x" aria-label="' + t("upload.remove") + '">✕</button>';
+        chip.querySelector(".file-chip-x").onclick = function () {
+          state.files.splice(i, 1);
+          paintFiles();
+        };
+        fileList.appendChild(chip);
+      });
+    }
+    if (fileInput) {
+      fileInput.addEventListener("change", function () {
+        var picked = Array.prototype.slice.call(fileInput.files || []).slice(0, 5 - state.files.length);
+        if (!picked.length) { fileInput.value = ""; paintFiles(); return; }
+        fileInput.disabled = true;
+        SSX.upload(picked).then(function (res) {
+          state.files = state.files.concat(res.files || []);
+          fileInput.disabled = false;
+          fileInput.value = "";
+          paintFiles();
+        }).catch(function (e) {
+          fileInput.disabled = false;
+          fileInput.value = "";
+          SSX.toast((e && e.message) || t("upload.err"), "error");
+        });
+      });
+      paintFiles();
+    }
 
     c.querySelectorAll(".pay-card").forEach(function (cardEl) {
       cardEl.onclick = function () {
@@ -460,6 +502,7 @@
         phone: state.phone,
         notes: state.notes,
         method: state.method,
+        files: state.files.join(","),
         consent: document.getElementById("b-consent") ? document.getElementById("b-consent").checked : true,
         company_website: document.querySelector("#b-hp") ? document.querySelector("#b-hp").value : ""
       }).then(function (res) {

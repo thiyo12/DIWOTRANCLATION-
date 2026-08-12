@@ -7,7 +7,7 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const bcrypt = require("bcryptjs");
 const otplib = require("otplib");
-const nodemailer = require("nodemailer");const { initDb, q, one, run } = require("./db");
+const nodemailer = require("nodemailer");const multer = require("multer");const { initDb, q, one, run } = require("./db");
 
 // --------------------------------------------------------------------------
 // .env loader (no dependency)
@@ -97,8 +97,62 @@ const refRateLimit = rateLimit({
   message: { ok: false, error: "Too many lookups. Slow down." }
 });
 
+// --------------------------------------------------------------------------
+// File uploads (customer attachments + finished translations)
+// --------------------------------------------------------------------------
+const UPLOADS_DIR = path.join(ROOT, "data", "uploads");
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const ALLOWED_EXT = new Set(["pdf", "doc", "docx", "jpg", "jpeg", "png", "heic", "heif", "txt"]);
+const uploadStorage = multer.diskStorage({
+  destination(req, file, cb) {
+    const month = new Date().toISOString().slice(0, 7);
+    const dir = path.join(UPLOADS_DIR, month);
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename(req, file, cb) {
+    const ext = String(file.originalname || "").split(".").pop().toLowerCase();
+    const safeExt = ALLOWED_EXT.has(ext) ? ext : "bin";
+    cb(null, crypto.randomBytes(12).toString("hex") + "." + safeExt);
+  }
+});
+
+function uploadFilter(req, file, cb) {
+  const orig = String(file.originalname || "").toLowerCase();
+  const ext = orig.split(".").pop();
+  const ok = ALLOWED_EXT.has(ext) && /^[a-z0-9._-]+$/i.test(orig);
+  cb(null, ok);
+}
+
+const upload = multer({
+  storage: uploadStorage,
+  limits: { fileSize: 25 * 1024 * 1024, files: 5, fieldSize: 1000 },
+  fileFilter: uploadFilter
+});
+
+// stored name -> absolute path, traversal-safe
+function resolveUpload(name) {
+  const n = String(name || "");
+  if (!/^[a-f0-9]{24}\.(pdf|doc|docx|jpg|jpeg|png|heic|heif|txt)$/.test(n)) return null;
+  try {
+    const months = fs.readdirSync(UPLOADS_DIR);
+    for (const m of months) {
+      const p = path.join(UPLOADS_DIR, m, n);
+      if (fs.existsSync(p)) return p;
+    }
+  } catch (e) {}
+  return null;
+}
+
+function splitFiles(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === "string" && raw.trim()) return raw.split(",").map((s) => s.trim()).filter(Boolean);
+  return [];
+}
+
 // Origin allow-list for public writes: cross-site scripts cannot submit forms.
-app.use(["/api/bookings", "/api/documents", "/api/concierge"], (req, res, next) => {
+app.use(["/api/bookings", "/api/documents", "/api/concierge", "/api/upload"], (req, res, next) => {
   const origin = req.headers && req.headers.origin;
   if (origin) {
     try {
@@ -529,6 +583,56 @@ app.use(["/api/bookings", "/api/concierge", "/api/documents"], (req, res, next) 
   next();
 });
 
+// ---- Uploads & downloads ---------------------------------------------------
+// Public upload: files are stored under random names; the caller links them to
+// a booking / document request / concierge request via the order JSON.
+app.post("/api/upload", writeRateLimit, (req, res) => {
+  upload.array("files", 5)(req, res, function (err) {
+    if (err) {
+      const msg = String((err && err.message) || err);
+      const tooBig = /file too large|File too large/i.test(msg);
+      const tooMany = /too many files/i.test(msg);
+      return res.status(413).json({ ok: false, error: tooBig ? "One of the files exceeds the 25 MB limit." : tooMany ? "Maximum 5 files per request." : "Upload failed." });
+    }
+    const saved = (req.files || []).map((f) => f.filename);
+    if (!saved.length) return res.status(400).json({ ok: false, error: "No file received. Allowed: PDF, Word, JPG, PNG, HEIC, TXT (max 25 MB each)." });
+    secEvent(req, "upload", "Uploaded " + saved.length + " file(s)");
+    res.json({ ok: true, files: saved });
+  });
+});
+
+function sendUpload(res, file) {
+  const p = resolveUpload(file);
+  if (!p) return res.status(404).json({ ok: false, error: "File not found." });
+  res.setHeader("Content-Disposition", 'attachment; filename="' + file + '"');
+  res.sendFile(p);
+}
+
+app.get("/api/documents/:ref/file", refRateLimit, (req, res) => {
+  const d = one("SELECT attachment FROM document_requests WHERE ref = ? AND status != 'blocked'", [req.params.ref]);
+  if (!d || !d.attachment) return res.status(404).json({ ok: false, error: "Not found." });
+  sendUpload(res, d.attachment);
+});
+
+app.get("/api/documents/:ref/result", refRateLimit, (req, res) => {
+  const d = one("SELECT result_file FROM document_requests WHERE ref = ? AND status = 'done'", [req.params.ref]);
+  if (!d || !d.result_file) return res.status(404).json({ ok: false, error: "Not ready yet." });
+  sendUpload(res, d.result_file);
+});
+
+app.get("/api/concierge/:ref/result", refRateLimit, (req, res) => {
+  const c = one("SELECT result_file FROM concierge WHERE ref = ? AND status = 'done'", [req.params.ref]);
+  if (!c || !c.result_file) return res.status(404).json({ ok: false, error: "Not ready yet." });
+  sendUpload(res, c.result_file);
+});
+
+app.get("/api/bookings/:ref/file/:name", refRateLimit, (req, res) => {
+  const b = one("SELECT files FROM bookings WHERE ref = ?", [req.params.ref]);
+  if (!b) return res.status(404).json({ ok: false, error: "Not found." });
+  if (splitFiles(b.files).indexOf(req.params.name) === -1) return res.status(404).json({ ok: false, error: "Not found." });
+  sendUpload(res, req.params.name);
+});
+
 // trap paths that scanners probe — log them, answer nothing
 app.use(["/wp-admin", "/wp-login.php", "/config.php", "/.env", "/.git", "/phpmyadmin", "/api/console", "/admin/config", "/shell"], (req, res) => {
   secEvent(req, "trap_hit", "Trap path accessed: " + req.originalUrl.slice(0, 300));
@@ -733,23 +837,26 @@ app.post("/api/documents", writeRateLimit, (req, res) => {
     urgent: b.urgent ? "Yes" : "No"
   });
   const ref = genRef("SSXD");
+  const attachment = splitFiles(b.attachment).slice(0, 3).join(",");
   run(
     `INSERT INTO document_requests
-     (ref, doc_type, doc_type_name, from_lang, to_lang, mode, fields, notes, customer, email, phone, ip, status, consent)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'received',1)`,
+     (ref, doc_type, doc_type_name, from_lang, to_lang, mode, fields, notes, customer, email, phone, ip, status, consent, attachment)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'received',1,?)`,
     [
       ref, docType.id, docType.name_en, b.from_lang, b.to_lang, mode, fields,
       String(b.notes || "").slice(0, 2000),
       String(b.customer || "").slice(0, 120),
       String(b.email || "").slice(0, 160),
       String(b.phone || "").slice(0, 40),
-      clientIp(req)
+      clientIp(req),
+      String(attachment).slice(0, 500)
     ]
   );
   sendMail(b.email, "Ssaaxcy Solutions — document request " + ref, confirmationHtml("We received your document request", [
     ["Reference", ref],
     ["Document", docType.name_en],
     ["Language", b.from_lang + " → " + b.to_lang],
+    ["Track your request", (process.env.BASE_URL || "https://ssaaxcy.ch") + "/track.html?ref=" + ref],
     ["Next step", "Our team completes your document within 2 working days and emails it back to you."]
   ]));
   res.json({ ok: true, ref });
@@ -757,9 +864,9 @@ app.post("/api/documents", writeRateLimit, (req, res) => {
 
 // Public document lookup — only non-personal fields
 app.get("/api/documents/:ref", refRateLimit, (req, res) => {
-  const d = one("SELECT ref, doc_type, doc_type_name, from_lang, to_lang, mode, status FROM document_requests WHERE ref = ? AND status != 'blocked'", [req.params.ref]);
+  const d = one("SELECT ref, doc_type, doc_type_name, from_lang, to_lang, mode, status, attachment, result_file FROM document_requests WHERE ref = ? AND status != 'blocked'", [req.params.ref]);
   if (!d) return res.status(404).json({ ok: false, error: "Not found." });
-  res.json({ ok: true, request: d });
+  res.json({ ok: true, request: { ref: d.ref, doc_type: d.doc_type, doc_type_name: d.doc_type_name, from_lang: d.from_lang, to_lang: d.to_lang, mode: d.mode, status: d.status, hasFile: !!d.attachment, hasResult: !!d.result_file } });
 });
 
 app.post("/api/bookings", writeRateLimit, (req, res) => {
@@ -795,17 +902,19 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
 
   const ref = genRef(loadSetting("ref_prefix", "SSX"));
   const method = PAY_METHODS.includes(b.method) ? b.method : "twint";
+  const files = splitFiles(b.files).slice(0, 5).join(",");
 
   run(
     `INSERT INTO bookings
      (ref, language_code, language_name, service_id, service_name, date, time, duration,
-      mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status, canton, consent)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)`,
+      mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status, canton, consent, files)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)`,
     [
       ref, lang.code, lang.name, service.id, service.name, b.date, b.time, dur.mins,
       b.mode, String(b.address || "").slice(0, 240), String(b.customer || "").slice(0, 120),
       String(b.email || "").slice(0, 160), String(b.phone || "").slice(0, 40), String(b.notes || "").slice(0, 2000),
-      base, durationPrice, fee, total, method, "requested", canton.slice(0, 60)
+      base, durationPrice, fee, total, method, "requested", canton.slice(0, 60),
+      String(files).slice(0, 500)
     ]
   );
   run("INSERT INTO payments (ref, method, amount, status) VALUES (?,?,?,?)", [ref, method, total, "unpaid"]);
@@ -816,6 +925,7 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
     ["When", b.date + " at " + b.time],
     ["Mode", b.mode === "on_site" ? "On-site" : "Video"],
     ["Estimated total", "CHF " + total.toFixed(2)],
+    ["Track your request", (process.env.BASE_URL || "https://ssaaxcy.ch") + "/track.html?ref=" + ref],
     ["Next step", "We will call you shortly to confirm your appointment."]
   ]));
   res.json({
@@ -828,12 +938,14 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
 // Public booking lookup — returns only what the confirmation page needs (no contact PII)
 app.get("/api/bookings/:ref", refRateLimit, (req, res) => {
   const b = one(
-    "SELECT ref, language_code, language_name, service_id, service_name, date, time, duration, mode, address, total, method, status, cancel_reason FROM bookings WHERE ref = ?",
+    "SELECT ref, language_code, language_name, service_id, service_name, date, time, duration, mode, address, total, method, status, cancel_reason, files FROM bookings WHERE ref = ?",
     [req.params.ref]
   );
   if (!b) return res.status(404).json({ ok: false, error: "Booking not found." });
   const p = one("SELECT status pay_status FROM payments WHERE ref = ? ORDER BY id DESC LIMIT 1", [req.params.ref]);
-  res.json({ ok: true, booking: Object.assign({}, b, { pay_status: p ? p.pay_status : (b.status === "paid" ? "paid" : "unpaid") }) });
+  const files = splitFiles(b.files);
+  delete b.files;
+  res.json({ ok: true, booking: Object.assign({}, b, { files, pay_status: p ? p.pay_status : (b.status === "paid" ? "paid" : "unpaid") }) });
 });
 
 app.post("/api/concierge", writeRateLimit, (req, res) => {
@@ -845,20 +957,29 @@ app.post("/api/concierge", writeRateLimit, (req, res) => {
     return res.status(400).json({ ok: false, error: "Privacy consent is required." });
   }
   const ref = genRef("SSX");
+  const files = splitFiles(c.files).slice(0, 5).join(",");
   run(
     `INSERT INTO concierge (ref, service, title, language_code, language_name, detail, customer, email, phone, files, status, consent)
      VALUES (?,?,?,?,?,?,?,?,?,?,'new',1)`,
     [ref, String(c.service).slice(0, 30), String(c.title || "").slice(0, 200), c.language_code, langName(c.language_code),
       String(c.detail).slice(0, 4000), String(c.customer || "").slice(0, 120), String(c.email || "").slice(0, 160),
-      String(c.phone || "").slice(0, 40), String(c.files || "").slice(0, 500)]
+      String(c.phone || "").slice(0, 40), String(files).slice(0, 500)]
   );
   sendMail(c.email, "Ssaaxcy Solutions — concierge request (" + ref + ")", confirmationHtml("We received your concierge request", [
     ["Reference", ref],
     ["Service", c.service],
     ["Language", c.language_code],
+    ["Track your request", (process.env.BASE_URL || "https://ssaaxcy.ch") + "/track.html?ref=" + ref],
     ["Next step", "Our team contacts you within one working day."]
   ]));
   res.json({ ok: true, ref });
+});
+
+// Public concierge lookup — non-personal fields, used by the tracking page
+app.get("/api/concierge/:ref", refRateLimit, (req, res) => {
+  const c = one("SELECT ref, service, title, language_code, language_name, status, files, result_file FROM concierge WHERE ref = ?", [req.params.ref]);
+  if (!c) return res.status(404).json({ ok: false, error: "Not found." });
+  res.json({ ok: true, request: { ref: c.ref, service: c.service, title: c.title, language_code: c.language_code, language_name: c.language_name, status: c.status, hasFile: !!c.files, hasResult: !!c.result_file } });
 });
 
 // ============================================================== Admin data API
@@ -1118,6 +1239,49 @@ app.delete("/admin/api/documents/:id", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ---- Admin file access & result delivery -------------------------------
+app.get("/admin/api/file/:name", requireAdmin, (req, res) => {
+  const p = resolveUpload(req.params.name);
+  if (!p) return res.status(404).json({ ok: false, error: "File not found." });
+  res.setHeader("Content-Disposition", 'attachment; filename="' + req.params.name + '"');
+  res.sendFile(p);
+});
+
+// Admin attaches the finished translation/filled form to a request.
+// kind: documents | concierge ; single file "file".
+const resultUpload = upload.single("file");
+function attachResult(req, res, table, id, email) {
+  resultUpload(req, res, function (err) {
+    if (err) return res.status(400).json({ ok: false, error: "Upload failed. Max 25 MB (PDF, Word, JPG, PNG, HEIC, TXT)." });
+    const f = req.file && req.file.filename;
+    if (!f) return res.status(400).json({ ok: false, error: "No file received." });
+    const row = one("SELECT ref FROM " + table + " WHERE id = ?", [id]);
+    if (!row) return res.status(404).json({ ok: false, error: "Request not found." });
+    run("UPDATE " + table + " SET result_file = ?, status = 'done' WHERE id = ?", [f, id]);
+    secEvent(req, "doc_result", table + " #" + id + " result uploaded (" + row.ref + ")");
+    if (email) {
+      sendMail(email, "Ssaaxcy Solutions — your document is ready (" + row.ref + ")", confirmationHtml("Your document is ready", [
+        ["Reference", row.ref],
+        ["Download", (process.env.BASE_URL || "https://ssaaxcy.ch") + "/track.html?ref=" + row.ref],
+        ["Note", "The finished document is available for download on your request page."]
+      ]));
+    }
+    res.json({ ok: true, file: f });
+  });
+}
+
+app.post("/admin/api/documents/:id/result", requireAdmin, (req, res) => {
+  const d = one("SELECT ref, email FROM document_requests WHERE id = ?", [req.params.id]);
+  if (!d) return res.status(404).json({ ok: false, error: "Request not found." });
+  attachResult(req, res, "document_requests", req.params.id, d.email);
+});
+
+app.post("/admin/api/concierge/:id/result", requireAdmin, (req, res) => {
+  const c = one("SELECT ref, email FROM concierge WHERE id = ?", [req.params.id]);
+  if (!c) return res.status(404).json({ ok: false, error: "Request not found." });
+  attachResult(req, res, "concierge", req.params.id, c.email);
+});
+
 // clients: unified contact history by name / email / phone / ref
 app.get("/admin/api/clients", requireAdmin, (req, res) => {
   const term = String(req.query.q || "").trim().slice(0, 80);
@@ -1174,6 +1338,7 @@ app.get("/translation.html", (req, res) => res.sendFile(path.join(ROOT, "transla
 app.get("/booking.html", (req, res) => res.sendFile(path.join(ROOT, "booking.html")));
 app.get("/concierge.html", (req, res) => res.sendFile(path.join(ROOT, "concierge.html")));
 app.get("/confirmation.html", (req, res) => res.sendFile(path.join(ROOT, "confirmation.html")));
+app.get("/track.html", (req, res) => res.sendFile(path.join(ROOT, "track.html")));
 app.get("/privacy.html", (req, res) => res.sendFile(path.join(ROOT, "privacy.html")));
 
 // error-cleanup to keep server from crashing
