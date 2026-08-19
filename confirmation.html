@@ -31,6 +31,7 @@
         <span style="color:var(--champagne);">✦</span>
         <span id="mode-note"></span>
       </div>
+      <div class="contact-strip" id="conf-contact" style="display:none;justify-content:center;"></div>
       <div class="hero-actions" style="justify-content:center;margin-top:30px;">
         <a class="btn btn-primary" href="booking.html" data-i18n="confirm.bookAnother"></a>
         <a class="btn btn-light" href="concierge.html" data-i18n="nav.concierge"></a>
@@ -71,6 +72,13 @@
       if (!ref) { window.location.href = isDoc ? "fillform.html" : "booking.html"; return; }
 
       document.getElementById("ref-pill").textContent = ref;
+      var cc = document.getElementById("conf-contact");
+      if (cc) {
+        var bits = [];
+        if (SSX.settings.supportEmail) bits.push('<a class="btn btn-light btn-sm" href="mailto:' + SSX.helpers.esc(SSX.settings.supportEmail) + '">✉ ' + SSX.t("track.emailUs") + "</a>");
+        if (SSX.settings.whatsapp) bits.push('<a class="btn btn-light btn-sm" href="' + SSX.helpers.esc(SSX.waMe(SSX.settings.whatsapp)) + '" target="_blank" rel="noopener">WhatsApp</a>');
+        if (bits.length) { cc.innerHTML = bits.join(""); cc.style.display = "flex"; }
+      }
 
       loadBooking(ref, function (b, doc) {
         curBooking = b;
@@ -93,6 +101,12 @@
           row(SSX.t("booking.email"), b.email || "—");
           row(SSX.t("confirm.status"), b.status === "received" ? SSX.t("confirm.statusPending") : SSX.t("confirm.statusConfirmed"));
           document.getElementById("mode-note").textContent = SSX.t("fill.emailNote");
+          if (b.hasResult) {
+            var dl = document.createElement("div");
+            dl.className = "dl-row";
+            dl.innerHTML = '<a class="btn btn-primary" href="/api/documents/' + encodeURIComponent(ref) + '/result">' + SSX.icon("download", 16) + " " + SSX.t("track.download") + "</a>";
+            table.appendChild(dl);
+          }
         } else {
           row(SSX.t("booking.serviceLabel"), b.service_name || SSX.t("interpreting.rate"));
           row(SSX.t("booking.languageLabel"), b.language_name || "—");

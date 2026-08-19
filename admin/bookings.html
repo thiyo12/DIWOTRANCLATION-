@@ -190,9 +190,16 @@
         ["Payment method", b.method], ["Status", b.status], ["Notes", b.notes],
         ["Cancel reason", b.cancel_reason], ["Booked", SS.when(b.created_at)]
       ];
-      return rows.map(function (r) {
+      var files = String(b.files || "").split(",").filter(Boolean);
+      var html = rows.map(function (r) {
         return '<div class="detail-row"><span>' + SS.esc(r[0]) + '</span><b>' + SS.esc(r[1] && r[1] !== "" ? r[1] : "—") + '</b></div>';
       }).join("");
+      if (files.length) {
+        html += '<div class="detail-row"><span>Files</span><b>' + files.map(function (f) {
+          return '<a href="/admin/api/file/' + encodeURIComponent(f) + '" style="margin-right:10px;">' + SS.icon("download", 14) + " Download</a>";
+        }).join("") + '</b></div>';
+      }
+      return html;
     }
   </script>
 </body>

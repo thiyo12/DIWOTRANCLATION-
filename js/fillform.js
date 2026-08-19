@@ -16,6 +16,7 @@
     urgent: false,
     lastMinute: false,
     consent: false,
+    files: [],
     submitting: false
   };
 
@@ -220,6 +221,12 @@
         '<label class="opt-line"><input type="checkbox" id="d-urgent" ' + (state.urgent ? "checked" : "") + '> <span>' + t("fill.urgent") + ' (+' + (Number(SSX.settings.docUrgentFlat) || 15) + ')</span></label>' +
         '<label class="opt-line"><input type="checkbox" id="d-lastmin" ' + (state.lastMinute ? "checked" : "") + '> <span>' + t("fill.lastMinute") + ' (+' + (Number(SSX.settings.docLastMinute) || 25) + ')</span></label>' +
       '</div>' +
+      '<div class="field"><label>' + t("upload.labelReq") + '</label>' +
+        '<div class="upload-box"><input type="file" id="d-files" class="upload-input" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.heic,.heif,.txt">' +
+        '<div class="upload-cta">' + SSX.icon("upload", 16) + " " + t("upload.choose") + '</div>' +
+        '<p class="tiny muted">' + t("upload.hint") + '</p></div>' +
+        '<div id="d-filelist" class="file-chips"></div>' +
+      '</div>' +
       '<div class="field"><label>' + t("fill.note") + '</label><textarea class="textarea" id="d-notes" placeholder="' + t("fill.notePh") + '">' + SSX.helpers.esc(state.notes) + '</textarea></div>' +
       '<label class="consent-line" style="margin:14px 0;"><input type="checkbox" id="d-consent"> <span>' + t("privacy.consent") + ' (<a href="privacy.html" target="_blank" rel="noopener">' + t("privacy.link") + '</a>)</span></label>' +
       '<input type="text" name="website" id="d-website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">' +
@@ -240,6 +247,35 @@
     if (lm) lm.addEventListener("change", function () { state.lastMinute = lm.checked; renderSummary(); });
     var cons = c.querySelector("#d-consent");
     if (cons) cons.addEventListener("change", function () { state.consent = cons.checked; });
+
+    var fileInput = c.querySelector("#d-files");
+    var fileList = c.querySelector("#d-filelist");
+    function paintFiles() {
+      fileList.innerHTML = "";
+      state.files.forEach(function (f, i) {
+        var chip = document.createElement("span");
+        chip.className = "file-chip";
+        chip.innerHTML = SSX.icon("file", 13) + " " + SSX.helpers.esc(SSX.fileLabel(f)) +
+          '<button type="button" class="file-chip-x" aria-label="' + t("upload.remove") + '">✕</button>';
+        chip.querySelector(".file-chip-x").onclick = function () { state.files.splice(i, 1); paintFiles(); };
+        fileList.appendChild(chip);
+      });
+    }
+    if (fileInput) {
+      fileInput.addEventListener("change", function () {
+        var picked = Array.prototype.slice.call(fileInput.files || []).slice(0, 3 - state.files.length);
+        if (!picked.length) { fileInput.value = ""; paintFiles(); return; }
+        fileInput.disabled = true;
+        SSX.upload(picked).then(function (res) {
+          state.files = state.files.concat(res.files || []);
+          fileInput.disabled = false; fileInput.value = ""; paintFiles();
+        }).catch(function (e) {
+          fileInput.disabled = false; fileInput.value = "";
+          SSX.toast((e && e.message) || t("upload.err"), "error");
+        });
+      });
+      paintFiles();
+    }
   }
 
   function renderSummary() {
@@ -307,6 +343,7 @@
         fields: state.fields.trim() ? state.fields : null,
         urgent: !!state.urgent,
         last_minute: !!state.lastMinute,
+        attachment: state.files.join(","),
         consent: true,
         notes: state.notes,
         website: document.getElementById("d-website") ? document.getElementById("d-website").value : ""

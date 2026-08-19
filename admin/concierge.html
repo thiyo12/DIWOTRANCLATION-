@@ -88,12 +88,14 @@
           '<div class="detail-row"><span>Customer</span><b>' + SS.esc(b.customer) + '</b></div>' +
           '<div class="detail-row"><span>Email</span><b>' + SS.esc(b.email) + '</b></div>' +
           '<div class="detail-row"><span>Phone</span><b>' + SS.esc(b.phone || "—") + '</b></div>' +
-          '<div class="detail-row"><span>Attached file</span><b>' + SS.esc(b.files || "—") + '</b></div>' +
+          '<div class="detail-row"><span>Attached file</span><b>' + (b.files ? '<a href="/admin/api/file/' + encodeURIComponent(b.files) + '">' + SS.icon("download", 14) + " Download</a>" : "—") + '</b></div>' +
+          (b.result_file ? '<div class="detail-row"><span>Result</span><b><a href="/admin/api/file/' + encodeURIComponent(b.result_file) + '">' + SS.icon("download", 14) + " Download</a></b></div>" : "") +
           '<div class="card card-pad mt" style="background:#faf8f3;"><div class="small muted">Request details</div><p style="white-space:pre-wrap;margin-top:6px;">' + SS.esc(b.detail || "—") + '</p></div>' +
         '</div>' +
         '<div class="flex mt">' +
         '<select id="c-status" class="input" style="flex:1;"><option value="new">new</option><option value="handled">handled</option><option value="closed">closed</option></select>' +
         '<button class="btn btn-dark btn-sm" id="c-save">Save status</button>' +
+        '<label class="btn btn-light btn-sm" style="cursor:pointer;">Upload result<input type="file" id="c-result" style="display:none;" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.heic,.heif,.txt"></label>' +
         '<button class="btn btn-light btn-sm danger" id="c-del">Delete</button></div>'
       );
       var sel = m.querySelector("#c-status");
@@ -109,6 +111,13 @@
           SS.del("/admin/api/concierge/" + id).then(function () { m.remove(); load(); SS.toast("Request deleted.", "success"); });
         });
       };
+      var rup = m.querySelector("#c-result");
+      if (rup) rup.addEventListener("change", function () {
+        if (!rup.files || !rup.files[0]) return;
+        SS.upload("/admin/api/concierge/" + id + "/result", rup.files[0]).then(function () {
+          m.remove(); load(); SS.toast("Result uploaded. Status set to done.", "success");
+        }).catch(function (e) { SS.toast(e.message, "error"); });
+      });
     };
   </script>
 </body>

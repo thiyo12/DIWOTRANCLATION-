@@ -120,6 +120,13 @@
           <div class="field"><label data-i18n="cf.message"></label>
             <textarea class="textarea" id="t-detail" data-ph="trans.detailPh"></textarea>
           </div>
+          <div class="field"><label data-i18n="upload.labelReq"></label>
+            <div class="upload-box"><input type="file" id="t-files" class="upload-input" multiple accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.heic,.heif,.txt">
+              <div class="upload-cta"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M4 20h16"/></svg> <span data-i18n="upload.choose"></span></div>
+              <p class="tiny muted" data-i18n="upload.hint"></p>
+            </div>
+            <div id="t-filelist" class="file-chips"></div>
+          </div>
           <label class="consent-line"><input type="checkbox" id="t-consent"> <span data-i18n="privacy.consent"></span> (<a href="privacy.html" target="_blank" rel="noopener" data-i18n="privacy.link"></a>)</label>
           <button type="submit" class="btn btn-primary btn-lg btn-block" id="t-submit" data-i18n="trans.orderCta"></button>
           <p class="tiny muted" style="text-align:center;margin-top:12px;" data-i18n="cf.noPay"></p>
@@ -150,6 +157,34 @@
       var name = document.getElementById("t-name").value.trim();
       var email = document.getElementById("t-email").value.trim();
       var detail = document.getElementById("t-detail").value.trim();
+      var tFiles = [];
+      function paintFiles() {
+        var fl = document.getElementById("t-filelist");
+        fl.innerHTML = "";
+        tFiles.forEach(function (f, i) {
+          var chip = document.createElement("span");
+          chip.className = "file-chip";
+          chip.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> ' + SSX.helpers.esc(SSX.fileLabel(f)) +
+            '<button type="button" class="file-chip-x" aria-label="Remove">✕</button>';
+          chip.querySelector(".file-chip-x").onclick = function () { tFiles.splice(i, 1); paintFiles(); };
+          fl.appendChild(chip);
+        });
+      }
+      document.getElementById("t-files").addEventListener("change", function () {
+        var picked = Array.prototype.slice.call(this.files || []).slice(0, 3 - tFiles.length);
+        if (!picked.length) { this.value = ""; paintFiles(); return; }
+        this.disabled = true;
+        SSX.upload(picked).then(function (res) {
+          tFiles = tFiles.concat(res.files || []);
+          document.getElementById("t-files").disabled = false;
+          document.getElementById("t-files").value = "";
+          paintFiles();
+        }).catch(function (e) {
+          document.getElementById("t-files").disabled = false;
+          document.getElementById("t-files").value = "";
+          SSX.toast((e && e.message) || SSX.t("upload.err"), "error");
+        });
+      });
       if (!name) { SSX.toast(SSX.t("err.name"), "error"); return; }
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { SSX.toast(SSX.t("err.email"), "error"); return; }
       if (!detail) { SSX.toast(SSX.t("err.detail"), "error"); return; }
@@ -164,7 +199,7 @@
         customer: name,
         email: email,
         phone: "",
-        files: "",
+        files: tFiles.join(","),
         consent: true
       };
 

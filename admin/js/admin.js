@@ -27,6 +27,17 @@ SS.post = function (path, body) { return SS.api("POST", path, body); };
 SS.patch = function (path, body) { return SS.api("PATCH", path, body); };
 SS.del = function (path) { return SS.api("DELETE", path); };
 
+SS.upload = function (path, file) {
+  var fd = new FormData();
+  fd.append("file", file);
+  return fetch(path, { method: "POST", body: fd }).then(function (res) {
+    return res.json().then(function (j) {
+      if (!res.ok || !j.ok) throw new Error(j.error || ("Request failed (" + res.status + ")"));
+      return j;
+    });
+  });
+};
+
 SS.esc = function (s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
