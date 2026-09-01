@@ -36,9 +36,9 @@ const SEED_DURATIONS = [
 
 const SEED_SETTINGS = [
   ["brand_name", "Ssaaxcy Solutions"],
-  ["support_email", "hello@ssaaxcy.ch"],
-  ["support_phone", "+41 44 000 00 00"],
-  ["whatsapp", "+41 44 000 00 00"],
+  ["support_email", "support@ssaaxcy.ch"],
+  ["support_phone", "+41 76 253 12 92"],
+  ["whatsapp", "+41 76 253 12 92"],
   ["instagram", "https://instagram.com/ssaaxcy"],
   ["facebook", "https://facebook.com/ssaaxcy"],
   ["linkedin", "https://linkedin.com/company/ssaaxcy"],

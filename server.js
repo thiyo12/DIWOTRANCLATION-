@@ -576,7 +576,7 @@ function sendMail(to, subject, html) {
       });
       transport.sendMail(
         {
-          from: loadSetting("smtp_from", "") || ('Ssaaxcy Solutions <' + loadSetting("support_email", "hello@ssaaxcy.ch") + ">"),
+          from: loadSetting("smtp_from", "") || ('Ssaaxcy Solutions <' + loadSetting("support_email", "support@ssaaxcy.ch") + ">"),
           to,
           subject,
           html
