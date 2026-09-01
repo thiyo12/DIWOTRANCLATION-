@@ -515,6 +515,8 @@
           duration: res.duration,
           mode: res.mode,
           method: res.method,
+          total: res.total,
+          payment: res.payment,
           status: res.status || "requested"
         });
       }).catch(function (err) {

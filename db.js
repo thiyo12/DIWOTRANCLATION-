@@ -53,6 +53,7 @@ const SEED_SETTINGS = [
   ["pay_twint_ref", "+41 79 000 00 00"],
   ["pay_iban", "CH00 0000 0000 0000 0000 0"],
   ["pay_bank_name", "Ssaaxcy Solutions GmbH"],
+  ["twint_payment_url", ""],
   ["currency", "CHF"],
   ["ref_prefix", "SSX"],
   ["admin_2fa", "0"],
@@ -260,4 +261,17 @@ function run(sql, params = []) {
   return r;
 }
 
-module.exports = { initDb, open, q, one, run, DB_PATH, SEED_SERVICES, SEED_LANGUAGES, SEED_DURATIONS, SEED_DOC_TYPES };
+function tx(fn) {
+  const d = open();
+  d.exec("BEGIN IMMEDIATE");
+  try {
+    const result = fn(d);
+    d.exec("COMMIT");
+    return result;
+  } catch (e) {
+    d.exec("ROLLBACK");
+    throw e;
+  }
+}
+
+module.exports = { initDb, open, q, one, run, tx, DB_PATH, SEED_SERVICES, SEED_LANGUAGES, SEED_DURATIONS, SEED_DOC_TYPES };

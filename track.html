@@ -126,9 +126,10 @@
       }
 
       function renderBooking(b) {
+        var st = b.pay_status || b.status;
         var html = '<div class="card detail-table"><h3 style="margin-bottom:10px;">' + SSX.helpers.esc(b.service_name || "—") +
           ' · <span class="ref-pill" style="font-size:0.9rem;">' + SSX.helpers.esc(b.ref) + "</span></h3>";
-        html += row(SSX.t("confirm.status"), badge(b.status));
+        html += row(SSX.t("confirm.status"), badge(st));
         html += row(SSX.t("track.bookingWhen"), SSX.helpers.dateLabel(b.date) + ", " + SSX.helpers.esc(b.time));
         html += row(SSX.t("booking.modeLabel"), b.mode === "on_site" ? SSX.t("common.inPerson") : SSX.t("common.video"));
         html += "</div>";
@@ -139,7 +140,7 @@
           });
           html += "</div>";
         }
-        var wa = waShare("Booking " + b.ref + "\n" + (b.service_name || "") + "\n" + b.date + " " + b.time + "\nMode: " + (b.mode === "on_site" ? SSX.t("common.inPerson") : SSX.t("common.video")) + "\nStatus: " + SSX.t(STATUS[b.status] || "track.stReceived") + "\nRef: " + b.ref);
+        var wa = waShare("Booking " + b.ref + "\n" + (b.service_name || "") + "\n" + b.date + " " + b.time + "\nMode: " + (b.mode === "on_site" ? SSX.t("common.inPerson") : SSX.t("common.video")) + "\nStatus: " + SSX.t(STATUS[st] || "track.stReceived") + "\nRef: " + b.ref);
         if (wa) {
           html += '<div class="dl-row"><a class="btn btn-light" href="' + wa + '" target="_blank" rel="noopener">' + SSX.icon("whatsapp", 16) + " " + SSX.t("track.sendWa") + "</a></div>";
         }

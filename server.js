@@ -7,7 +7,7 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const bcrypt = require("bcryptjs");
 const otplib = require("otplib");
-const nodemailer = require("nodemailer");const multer = require("multer");const { initDb, q, one, run } = require("./db");
+const nodemailer = require("nodemailer");const multer = require("multer");const qrcode = require("qrcode");const { initDb, q, one, run, tx } = require("./db");
 
 // --------------------------------------------------------------------------
 // .env loader (no dependency)
@@ -360,6 +360,38 @@ function genRef(prefix) {
     if (!dup) return ref;
   }
   return (prefix || "SSX") + "-" + Date.now().toString(36).toUpperCase().slice(-6);
+}
+
+// Payment helpers — return the exact transfer/payment details the customer
+// needs, derived from the booking ref + total.
+function twintPaymentUrl(ref, total) {
+  const amount = String((Number(total) || 0).toFixed(2)) + " CHF";
+  const base = loadSetting("twint_payment_url", "");
+  if (base) {
+    return base
+      .replace(/\{ref\}/gi, encodeURIComponent(ref))
+      .replace(/\{amount\}/gi, encodeURIComponent(amount))
+      .replace(/\{total\}/gi, encodeURIComponent(String(Number(total) || 0)));
+  }
+  return "https://www.twint.ch/merchant-payment/" + encodeURIComponent(ref);
+}
+
+function twintQrDataUrl(url) {
+  return new Promise(function (resolve) {
+    qrcode.toDataURL(url, { margin: 1, width: 320, errorCorrectionLevel: "M" })
+      .then(resolve)
+      .catch(function () { resolve(null); });
+  });
+}
+
+function bankDetails(ref, total) {
+  return {
+    label: "Bank transfer",
+    iban: loadSetting("pay_iban", ""),
+    beneficiary: loadSetting("pay_bank_name", "") || "Ssaaxcy Solutions GmbH",
+    reference: ref,
+    amount: String((Number(total) || 0).toFixed(2)) + " CHF"
+  };
 }
 
 function parseFilters(table, query, allowed) {
@@ -904,20 +936,40 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
   const method = PAY_METHODS.includes(b.method) ? b.method : "twint";
   const files = splitFiles(b.files).slice(0, 5).join(",");
 
-  run(
-    `INSERT INTO bookings
-     (ref, language_code, language_name, service_id, service_name, date, time, duration,
-      mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status, canton, consent, files)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)`,
-    [
-      ref, lang.code, lang.name, service.id, service.name, b.date, b.time, dur.mins,
-      b.mode, String(b.address || "").slice(0, 240), String(b.customer || "").slice(0, 120),
-      String(b.email || "").slice(0, 160), String(b.phone || "").slice(0, 40), String(b.notes || "").slice(0, 2000),
-      base, durationPrice, fee, total, method, "requested", canton.slice(0, 60),
-      String(files).slice(0, 500)
-    ]
-  );
-  run("INSERT INTO payments (ref, method, amount, status) VALUES (?,?,?,?)", [ref, method, total, "unpaid"]);
+  try {
+    tx(function (db) {
+      const recheck = bookingBlock(b.date, b.time, b.mode, dur ? dur.mins : 60);
+      if (!recheck.ok) {
+        const err = new Error(recheck.error);
+        err.status = recheck.status;
+        err.nextFree = recheck.nextFree;
+        throw err;
+      }
+      db.prepare(
+        `INSERT INTO bookings
+         (ref, language_code, language_name, service_id, service_name, date, time, duration,
+          mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status, canton, consent, files)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)`
+      ).run(
+        ref, lang.code, lang.name, service.id, service.name, b.date, b.time, dur.mins,
+        b.mode, String(b.address || "").slice(0, 240), String(b.customer || "").slice(0, 120),
+        String(b.email || "").slice(0, 160), String(b.phone || "").slice(0, 40), String(b.notes || "").slice(0, 2000),
+        base, durationPrice, fee, total, method, "requested", canton.slice(0, 60),
+        String(files).slice(0, 500)
+      );
+      db.prepare("INSERT INTO payments (ref, method, amount, status, created_at) VALUES (?,?,?,?,datetime('now'))")
+        .run(ref, method, total, "unpaid");
+    });
+  } catch (err) {
+    if (err && err.status && err.nextFree) {
+      return res.status(err.status).json({ ok: false, error: err.message, nextFree: err.nextFree });
+    }
+    if (err && err.status) {
+      return res.status(err.status).json({ ok: false, error: err.message });
+    }
+    return res.status(500).json({ ok: false, error: "Could not save your booking. Please try again." });
+  }
+
   sendMail(b.email, "Ssaaxcy Solutions — appointment request " + ref, confirmationHtml("We received your appointment request", [
     ["Reference", ref],
     ["Service", service.name],
@@ -928,10 +980,40 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
     ["Track your request", (process.env.BASE_URL || "https://ssaaxcy.ch") + "/track.html?ref=" + ref],
     ["Next step", "We will call you shortly to confirm your appointment."]
   ]));
+
+  const payment = {
+    method,
+    total,
+    reference: ref,
+    twint: method === "twint" ? {
+      label: "TWINT",
+      paymentUrl: twintPaymentUrl(ref, total),
+      amount: String(total.toFixed(2)) + " CHF"
+    } : null,
+    bank: method === "bank" ? bankDetails(ref, total) : null
+  };
+
+  if (method === "twint" && payment.twint) {
+    return twintQrDataUrl(payment.twint.paymentUrl).then(function (qrDataUrl) {
+      payment.twint.qrDataUrl = qrDataUrl;
+      res.json({
+        ok: true, ref, language: lang.name, service: service.name, date: b.date, time: b.time,
+        mode: b.mode, duration: dur ? dur.mins : 60, base_price: base, duration_price: durationPrice,
+        fee, surcharge, canton, total, method, status: "requested", payment
+      });
+    }).catch(function () {
+      res.json({
+        ok: true, ref, language: lang.name, service: service.name, date: b.date, time: b.time,
+        mode: b.mode, duration: dur ? dur.mins : 60, base_price: base, duration_price: durationPrice,
+        fee, surcharge, canton, total, method, status: "requested", payment
+      });
+    });
+  }
+
   res.json({
     ok: true, ref, language: lang.name, service: service.name, date: b.date, time: b.time,
     mode: b.mode, duration: dur ? dur.mins : 60, base_price: base, duration_price: durationPrice,
-    fee, surcharge, canton, total, method, status: "requested"
+    fee, surcharge, canton, total, method, status: "requested", payment
   });
 });
 
@@ -943,9 +1025,30 @@ app.get("/api/bookings/:ref", refRateLimit, (req, res) => {
   );
   if (!b) return res.status(404).json({ ok: false, error: "Booking not found." });
   const p = one("SELECT status pay_status FROM payments WHERE ref = ? ORDER BY id DESC LIMIT 1", [req.params.ref]);
+  const payStatus = p ? p.pay_status : "unpaid";
   const files = splitFiles(b.files);
   delete b.files;
-  res.json({ ok: true, booking: Object.assign({}, b, { files, pay_status: p ? p.pay_status : (b.status === "paid" ? "paid" : "unpaid") }) });
+  const payment = {
+    method: b.method,
+    total: b.total,
+    reference: b.ref,
+    twint: b.method === "twint" ? {
+      label: "TWINT",
+      paymentUrl: twintPaymentUrl(b.ref, b.total),
+      amount: String((Number(b.total) || 0).toFixed(2)) + " CHF"
+    } : null,
+    bank: b.method === "bank" ? bankDetails(b.ref, b.total) : null
+  };
+  const respond = function (extra) {
+    res.json(Object.assign({ ok: true, payment }, extra, { booking: Object.assign({}, b, { files, pay_status: payStatus }) }));
+  };
+  if (b.method === "twint") {
+    return twintQrDataUrl(payment.twint.paymentUrl).then(function (qrDataUrl) {
+      payment.twint.qrDataUrl = qrDataUrl;
+      respond({});
+    }).catch(function () { respond({}); });
+  }
+  respond({});
 });
 
 app.post("/api/concierge", writeRateLimit, (req, res) => {
@@ -1208,7 +1311,7 @@ app.patch("/admin/api/settings", requireAdmin, (req, res) => {
          "hero_image_url", "flag_style", "travel_fee", "currency", "ref_prefix", "smtp_host", "smtp_port",
          "smtp_user", "smtp_pass", "smtp_from", "smtp_secure", "lockout_max", "lockout_minutes",
          "canton_surcharge", "doc_plain_word", "doc_cert_word", "doc_urgent_pct", "video_price",
-         "pay_twint_ref", "pay_iban", "pay_bank_name",
+         "pay_twint_ref", "pay_iban", "pay_bank_name", "twint_payment_url",
          "work_start", "work_end", "work_days", "lead_days", "visit_buffer_min", "video_buffer_min",
          "doc_flat", "doc_flat_tax", "doc_last_minute", "doc_urgent_flat", "retention_months"].includes(k)) {
       run("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", [k, String(b[k]).slice(0, 400)]);
@@ -1322,6 +1425,30 @@ app.patch("/admin/api/payments/:id", requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Confirm a payment: mark the payment as paid AND the linked booking as
+// confirmed together, then email the confirmation to the customer.
+app.post("/admin/api/payments/:id/confirm", requireAdmin, (req, res) => {
+  const p = one("SELECT * FROM payments WHERE id = ?", [req.params.id]);
+  if (!p) return res.status(404).json({ ok: false, error: "Payment not found." });
+  const booking = one("SELECT * FROM bookings WHERE ref = ?", [p.ref]);
+  if (!booking) return res.status(404).json({ ok: false, error: "Booking not found for this payment." });
+  tx(function (db) {
+    db.prepare("UPDATE payments SET status = 'paid' WHERE id = ?").run(req.params.id);
+    db.prepare("UPDATE bookings SET status = 'confirmed' WHERE id = ?").run(booking.id);
+  });
+  sendMail(booking.email, "Ssaaxcy Solutions — your appointment is confirmed (" + p.ref + ")", confirmationHtml("Payment received — appointment confirmed", [
+    ["Reference", p.ref],
+    ["Service", booking.service_name],
+    ["Language", booking.language_name],
+    ["When", booking.date + " at " + booking.time],
+    ["Mode", booking.mode === "on_site" ? "On-site" : "Video"],
+    ["Amount paid", "CHF " + (Number(p.amount) || Number(booking.total) || 0).toFixed(2)],
+    ["Track your request", (process.env.BASE_URL || "https://ssaaxcy.ch") + "/track.html?ref=" + p.ref]
+  ]));
+  secEvent(req, "payment_confirm", p.ref + " payment confirmed");
+  res.json({ ok: true, ref: p.ref });
+});
+
 // ============================================================== Site pages & static
 app.use("/js", express.static(path.join(ROOT, "js")));
 app.get("/healthz", (req, res) => res.set("Cache-Control", "no-store").send("ok"));
@@ -1356,6 +1483,28 @@ ensureAdminSeed();
 // --------------------------------------------------------------------------
 // Maintenance — retention & housekeeping
 // --------------------------------------------------------------------------
+function sweepExpiredPayments() {
+  try {
+    const rows = q(
+      "SELECT b.ref FROM bookings b JOIN payments p ON p.ref = b.ref " +
+      "WHERE b.status = 'requested' AND p.status = 'unpaid' " +
+      "AND b.created_at <= datetime('now', '-30 minutes')"
+    );
+    if (!rows.length) return;
+    rows.forEach(function (r) {
+      tx(function (db) {
+        db.prepare("UPDATE bookings SET status = 'cancelled', cancel_reason = ? WHERE ref = ?")
+          .run("Auto-cancelled: payment not completed within 30 minutes.", r.ref);
+        db.prepare("UPDATE payments SET status = 'cancelled' WHERE ref = ?")
+          .run(r.ref);
+      });
+    });
+    console.log("[expiry] auto-cancelled " + rows.length + " unpaid booking(s)");
+  } catch (e) {
+    console.error("[expiry] failed: " + e.message);
+  }
+}
+
 function runCleanup() {
   try {
     run("DELETE FROM sessions WHERE expires_at < datetime('now')");
@@ -1375,7 +1524,9 @@ function runCleanup() {
 
 if (require.main === module) {
   runCleanup();
+  sweepExpiredPayments();
   setInterval(runCleanup, 12 * 3600000);
+  setInterval(sweepExpiredPayments, 2 * 60 * 1000);
   app.listen(PORT, process.env.HOST || (IS_PROD ? "127.0.0.1" : undefined), () => {
     console.log("");
     console.log("  Ssaaxcy Solutions — Swiss digital concierge");

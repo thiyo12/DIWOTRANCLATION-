@@ -58,7 +58,9 @@
       if (SSX.http) {
         var path = ref.indexOf("SSXD") === 0 ? "/api/documents/" : "/api/bookings/";
         SSX.request("GET", path + encodeURIComponent(ref))
-          .then(function (res) { cb(res.booking || res.request, ref.indexOf("SSXD") === 0); })
+          .then(function (res) {
+            cb(Object.assign({}, res.booking || res.request, { payment: res.payment }), ref.indexOf("SSXD") === 0);
+          })
           .catch(function () { cb(findLocal(ref), false); });
       } else {
         setTimeout(function () { cb(findLocal(ref), false); }, 50);
@@ -136,7 +138,9 @@
     });
 
     function payState(b) {
-      var s = b.status;
+      // payments row is the single source of truth; booking.status only used
+      // as a fallback when no payments row exists yet (e.g. older records).
+      var s = b.pay_status || b.status;
       if (s === "paid" || s === "confirmed" || s === "completed") return "paid";
       if (s === "refunded") return "refunded";
       if (s === "cancelled") return "cancelled";
@@ -176,14 +180,22 @@
         box.innerHTML = html;
         return;
       }
-      var twint = SSX.settings.payTwintRef || "";
-      var iban = SSX.settings.payIban || "";
-      var payBank = SSX.settings.payBankName || "";
+      var twint = (b.payment && b.payment.twint) ? b.payment.twint : null;
+      var bank = (b.payment && b.payment.bank) ? b.payment.bank : null;
+      var twintLabel = SSX.settings.payTwintRef || "";
+      var iban = (bank && bank.iban) || SSX.settings.payIban || "";
+      var payBank = (bank && bank.beneficiary) || SSX.settings.payBankName || "";
       if (!twint && !iban && !payBank) {
         setTimeout(function () { renderPayBox(b); }, 500);
       }
       if (b.method === "twint") {
-        html += '<div class="row"><span>' + SSX.t("confirm.payTo") + '</span><b>TWINT · ' + SSX.helpers.esc(twint) + "</b></div>";
+        if (twint && twint.qrDataUrl) {
+          html += '<div style="text-align:center;margin:6px 0 14px;"><img src="' + twint.qrDataUrl + '" alt="TWINT QR" width="220" height="220" style="border-radius:12px;background:#fff;padding:8px;"></div>';
+        }
+        html += '<div class="row"><span>' + SSX.t("confirm.payTo") + '</span><b>TWINT · ' + SSX.helpers.esc(twintLabel) + "</b></div>";
+        if (twint && twint.paymentUrl) {
+          html += '<div class="row"><span>' + SSX.t("confirm.payLink") + '</span><b><a href="' + SSX.helpers.esc(twint.paymentUrl) + '" target="_blank" rel="noopener">' + SSX.helpers.esc(twint.paymentUrl) + "</a></b></div>";
+        }
       } else {
         html += '<div class="row"><span>' + SSX.t("confirm.payIban") + '</span><b>' + SSX.helpers.esc(iban) + "</b></div>";
         html += '<div class="row"><span>' + SSX.t("confirm.payBenef") + '</span><b>' + SSX.helpers.esc(payBank || "Ssaaxcy Solutions GmbH") + "</b></div>";
@@ -202,7 +214,7 @@
       var timer = setInterval(function () {
         SSX.request("GET", "/api/bookings/" + encodeURIComponent(ref))
           .then(function (res) {
-            var b = res.booking;
+            var b = Object.assign({}, res.booking, { payment: res.payment });
             if (!b) { clearInterval(timer); return; }
             var pay = payState(b);
             var box = document.getElementById("pay-box");

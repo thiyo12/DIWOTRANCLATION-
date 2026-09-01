@@ -239,6 +239,7 @@ window.SSX = window.SSX || {};
     "pay.received": { en: "Payment received — your appointment is confirmed.", de: "Zahlung eingegangen — Ihr Termin ist bestätigt.", ta: "பணம் பெறப்பட்டது — உறுதி செய்யப்பட்டது." },
     "confirm.payTitle": { en: "How to pay — booking confirmed after payment", de: "So zahlen Sie — Termin nach Zahlung bestätigt", ta: "எவ்வாறு செலுத்துவது — பணம் செலுத்திய பின் உறுதி" },
     "confirm.payTo": { en: "Pay to", de: "Zahlen an", ta: "செலுத்த வேண்டியவர்" },
+    "confirm.payLink": { en: "Payment link", de: "Zahlungslink", ta: "கட்டண இணைப்பு" },
     "confirm.payIban": { en: "IBAN (bank transfer)", de: "IBAN (Banküberweisung)", ta: "IBAN (வங்கி மாற்றம்)" },
     "confirm.payBenef": { en: "Beneficiary", de: "Begünstigter", ta: "பயனாளி" },
     "confirm.payAmount": { en: "Amount", de: "Betrag", ta: "தொகை" },
