@@ -50,7 +50,7 @@ const SEED_SETTINGS = [
   ["doc_cert_word", "0.20"],
   ["doc_urgent_pct", "50"],
   ["video_price", "60"],
-  ["pay_twint_ref", "+41 79 000 00 00"],
+  ["pay_twint_ref", "+41 76 253 12 92"],
   ["pay_iban", "CH00 0000 0000 0000 0000 0"],
   ["pay_bank_name", "Ssaaxcy Solutions GmbH"],
   ["twint_payment_url", ""],

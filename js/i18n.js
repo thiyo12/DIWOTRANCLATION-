@@ -445,7 +445,7 @@ window.SSX = window.SSX || {};
     "lang.TA": { en: "Tamil", de: "Tamil", ta: "தமிழ்" },
 
         "ph.email": { en: "you@example.ch", de: "sie@beispiel.ch", ta: "you@example.ch" },
-    "ph.phone": { en: "+41 79 000 00 00", de: "+41 79 000 00 00", ta: "+41 79 000 00 00" },
+    "ph.phone": { en: "+41 76 253 12 92", de: "+41 76 253 12 92", ta: "+41 76 253 12 92" },
 
     // ---------------- concierge service type descriptions ----------------
     "con.type.letters.desc": { en: "We explain what the letter means and what you must do.", de: "Wir erklären, was der Brief bedeutet und was zu tun ist.", ta: "கடிதத்தின் அர்த்தத்தை விளக்குகிறோம்." },
