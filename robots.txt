@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /confirmation.html
+Disallow: /track.html
+Disallow: /privacy.html
+
+Sitemap: https://ssaaxcy.ch/sitemap.xml

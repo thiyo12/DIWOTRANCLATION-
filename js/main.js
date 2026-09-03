@@ -308,18 +308,18 @@ SSX.shellFooter = function () {
       "</div>" +
       '<div class="footer-col" data-i18n-wrap>' +
         "<h4>" + SSX.t("nav.services") + "</h4><ul>" +
-          '<li><a href="booking.html" data-i18n="nav.booking"></a></li>' +
+          '<li><a href="booking.html" data-i18n="nav.booking">' + SSX.t("nav.booking") + "</a></li>" +
           '<li><a href="booking.html">' + SSX.t("svc.videoTitle") + "</a></li>" +
           '<li><a href="fillform.html">' + SSX.t("svc.docTitle") + "</a></li>" +
-          '<li><a href="translation.html" data-i18n="nav.translation"></a></li>' +
-          '<li><a href="concierge.html" data-i18n="nav.concierge"></a></li>' +
+          '<li><a href="translation.html" data-i18n="nav.translation">' + SSX.t("nav.translation") + "</a></li>" +
+          '<li><a href="concierge.html" data-i18n="nav.concierge">' + SSX.t("nav.concierge") + "</a></li>" +
         "</ul></div>" +
       '<div class="footer-col"><h4>' + SSX.t("footer.quickLinks") + '</h4><ul>' +
-        '<li><a href="index.html" data-i18n="nav.home"></a></li>' +
-        '<li><a href="services.html" data-i18n="nav.services"></a></li>' +
-        '<li><a href="translation.html" data-i18n="nav.translation"></a></li>' +
-        '<li><a href="booking.html" data-i18n="nav.bookNow"></a></li>' +
-        '<li><a href="fillform.html" data-i18n="nav.fillForm"></a></li>' +
+        '<li><a href="index.html" data-i18n="nav.home">' + SSX.t("nav.home") + "</a></li>" +
+        '<li><a href="services.html" data-i18n="nav.services">' + SSX.t("nav.services") + "</a></li>" +
+        '<li><a href="translation.html" data-i18n="nav.translation">' + SSX.t("nav.translation") + "</a></li>" +
+        '<li><a href="booking.html" data-i18n="nav.bookNow">' + SSX.t("nav.bookNow") + "</a></li>" +
+        '<li><a href="fillform.html" data-i18n="nav.fillForm">' + SSX.t("nav.fillForm") + "</a></li>" +
       "</ul></div>" +
       '<div class="footer-col"><h4>' + SSX.t("nav.contact") + '</h4><ul>' +
         '<li><a href="mailto:' + SSX.helpers.esc(SSX.settings.supportEmail) + '">' + SSX.helpers.esc(SSX.settings.supportEmail) + "</a></li>" +

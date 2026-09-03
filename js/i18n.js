@@ -383,6 +383,7 @@ window.SSX = window.SSX || {};
     "concierge.loc": { en: "No appointment needed — we're with you on every step.", de: "Kein Termin nötig — wir sind bei jedem Schritt dabei.", ta: "நியமனம் தேவையில்லை — ஒவ்வொரு அடியிலும் உடன்." },
     "concierge.select": { en: "What can we do for you?", de: "Was können wir für Sie tun?", ta: "உங்களுக்காக என்ன செய்வோம்?" },
     "concierge.request": { en: "Request help", de: "Hilfe anfragen", ta: "உதவி கோர்" },
+    "concierge.requestTitle": { en: "Request help", de: "Jetzt Hilfe anfragen", ta: "இப்போது உதவி கோருங்கள்" },
     "concierge.response": { en: "Our concierge team replies on the email you used.", de: "Unser Concierge-Team antwortet für Sie in E-Mail.", ta: "எங்கள் குழு உங்கள் மின்னஞ்சலில் பதில் அளிக்கும்." },
     // new concierge service types
     "con.type.visa": { en: "Visa & immigration", de: "Visa & Einwanderung", ta: "விசா & குடியேற்றம்" },
@@ -398,7 +399,7 @@ window.SSX = window.SSX || {};
     "confirm.backHome": { en: "Back to home", de: "Zur Startseite", ta: "முகப்பு" },
 
     // ---------------- footer ----------------
-    "footer.tagline": { en: "Interpreters, translations and a concierge for your Swiss life.", de: "Dolmetschen, Übersetzungen und Concierge für Ihr Schweizer Leben.", ta: "உங்கள் சுவிஸ் வாழ்க்கைக்கு மொழிபெயர்ப்பு." },
+    "footer.tagline": { en: "Ssaaxcy Solutions — your digital concierge in Zurich and across Switzerland.", de: "Ssaaxcy Solutions — Ihr digitaler Concierge in Zürich und der ganzen Schweiz.", ta: "சுவிஸ் டிஜிட்டல் கன்சியர்ஜ்." },
     "footer.rights": { en: "All rights reserved.", de: "Alle Rechte vorbehalten.", ta: "அனைத்து உரிமையும்." },
     "footer.certTitle": { en: "Certified translators", de: "Zertifizierte Übersetzer", ta: "சான்றளிக்கப்பட்ட மொழிபெயர்ப்பாளர்கள்" },
     "footer.certSub": { en: "Approved for official & notarised documents", de: "Zugelassen für offizielle & notarielle Dokumente", ta: "அதிகாரப்பூர்வ & நோட்டரி ஆவணங்களுக்கு அங்கீகரிக்கப்பட்டவை" },

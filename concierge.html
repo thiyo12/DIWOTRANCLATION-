@@ -3,13 +3,54 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ssaaxcy Solutions — Swiss Life Concierge</title>
-  <meta name="description" content="A human team for your Swiss life: official letters, phone calls, appointments, permits, forms, travel and business services — in German, English and Tamil.">
+  <title>Concierge-Service Schweiz – Ihr digitaler Concierge | Ssaaxcy Solutions</title>
+  <meta name="description" content="Persönlicher Concierge-Service für Ihr Leben in der Schweiz: offizielle Briefe, Telefonate, Formulare, Termine und Reisebuchungen — in Deutsch, Englisch und Tamil.">
+  <link rel="canonical" href="https://ssaaxcy.ch/concierge.html">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Concierge-Service Schweiz – Ihr digitaler Concierge | Ssaaxcy Solutions">
+  <meta property="og:description" content="Persönlicher Concierge-Service für Ihr Leben in der Schweiz — Briefe, Anrufe, Formulare und Termine in Ihrer Sprache.">
+  <meta property="og:url" content="https://ssaaxcy.ch/concierge.html">
+  <meta property="og:image" content="https://ssaaxcy.ch/assets/brand/logo-head.png">
+  <meta property="og:locale" content="de_CH">
   <link rel="icon" href="assets/brand/favicon.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "ProfessionalService",
+    "name": "Ssaaxcy Solutions",
+    "url": "https://ssaaxcy.ch/concierge.html",
+    "telephone": "+41 76 253 12 92",
+    "email": "support@ssaaxcy.ch",
+    "priceRange": "CHF",
+    "areaServed": ["Zürich", "Switzerland"],
+    "availableLanguage": ["German", "English", "Tamil"]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Service",
+    "serviceType": "Concierge",
+    "name": "Concierge-Service",
+    "provider": { "@type": "LocalBusiness", "name": "Ssaaxcy Solutions" },
+    "areaServed": ["Zürich", "Switzerland"],
+    "availableLanguage": ["German", "English", "Tamil"]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://ssaaxcy.ch/" },
+      { "@type": "ListItem", "position": 2, "name": "Concierge-Service", "item": "https://ssaaxcy.ch/concierge.html" }
+    ]
+  }
+  </script>
 </head>
 <body>
 
@@ -19,26 +60,26 @@
 
   <section class="page-hero">
     <div class="container">
-      <div class="breadcrumb"><a href="index.html" data-i18n="nav.home"></a> → <span data-i18n="nav.concierge"></span></div>
-      <h1 data-i18n="concierge.title"></h1>
-      <p data-i18n="concierge.subtitle"></p>
-      <p data-i18n="concierge.loc" style="margin-top:10px;color:rgba(255,255,255,0.85);font-weight:600;"></p>
+      <div class="breadcrumb"><a href="index.html" data-i18n="nav.home">Home</a> → <span data-i18n="nav.concierge">Concierge</span></div>
+      <h1 data-i18n="concierge.title">Concierge-Service für Ihr Leben in der Schweiz</h1>
+      <p data-i18n="concierge.subtitle">Wir erledigen für Sie — Briefe, Anrufe, Termine, Bewilligungen, Übersetzungen und Verwaltung von A bis Z. Ihr digitaler Concierge in Zürich und der ganzen Schweiz.</p>
+      <p data-i18n="concierge.loc" style="margin-top:10px;color:rgba(255,255,255,0.85);font-weight:600;">Kein Termin nötig — wir sind bei jedem Schritt dabei.</p>
     </div>
   </section>
 
   <section class="section">
     <div class="container">
       <div class="section-head center">
-        <span class="eyebrow" data-i18n="concierge.eyebrow"></span>
-        <h2 class="section-title" data-i18n="concierge.select"></h2>
+        <span class="eyebrow" data-i18n="concierge.eyebrow">Premium</span>
+        <h2 class="section-title" data-i18n="concierge.select">Was können wir für Sie tun?</h2>
       </div>
 
       <div class="concierge-grid" id="svc-cards"></div>
 
       <div class="section-head center" style="margin-top:70px;">
-        <span class="eyebrow" data-i18n="concierge.request"></span>
-        <h2 class="section-title" data-i18n="concierge.select"></h2>
-        <p class="section-intro" data-i18n="concierge.response"></p>
+        <span class="eyebrow" data-i18n="concierge.request">Hilfe anfragen</span>
+        <h2 class="section-title" data-i18n="concierge.requestTitle">Jetzt Hilfe anfragen</h2>
+        <p class="section-intro" data-i18n="concierge.response">Unser Concierge-Team antwortet für Sie in E-Mail.</p>
       </div>
 
       <div class="form-panel">
@@ -68,7 +109,7 @@
             <div class="field"><label data-i18n="cf.phone"></label><input class="input" id="c-phone" data-ph="ph.phone"></div>
           </div>
 
-          <label class="consent-line"><input type="checkbox" id="c-consent"> <span data-i18n="privacy.consent"></span> (<a href="privacy.html" target="_blank" rel="noopener" data-i18n="privacy.link"></a>)</label>
+          <label class="consent-line"><input type="checkbox" id="c-consent"> <span data-i18n="privacy.consent"></span> (<a href="privacy.html" target="_blank" rel="noopener" data-i18n="privacy.link">Datenschutzerklärung</a>)</label>
 
           <input type="text" name="company_website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true">
 
@@ -84,18 +125,18 @@
       <div class="member-pill-box">
         <div class="membership-card">
           <div>
-            <span class="eyebrow" style="color:#e7c9c5;" data-i18n="member.eyebrow"></span>
-            <h2 data-i18n="member.title"></h2>
-            <p data-i18n="member.body"></p>
+            <span class="eyebrow" style="color:#e7c9c5;" data-i18n="member.eyebrow">Monatsmitgliedschaft</span>
+            <h2 data-i18n="member.title">Ssaaxcy One — Ihr Concierge, immer da</h2>
+            <p data-i18n="member.body">Priorisierte Antworten, fester Ansprechpartner, 3 Anrufe oder Briefe pro Monat und 10% auf jede Buchung.</p>
           </div>
           <div class="membership-price">
             <div class="amount">CHF 29<small>/mo</small></div>
-            <div class="per" data-i18n="member.per"></div>
-            <a href="booking.html" class="btn btn-light" data-i18n="member.cta"></a>
+            <div class="per" data-i18n="member.per">Jederzeit kündbar · Keine Einrichtung</div>
+            <a href="booking.html" class="btn btn-light" data-i18n="member.cta">Mitglied werden</a>
           </div>
         </div>
         <div class="priority-note">
-          <span style="color:var(--champagne);">✦</span><span data-i18n="member.priority"></span>
+          <span style="color:var(--champagne);">✦</span><span data-i18n="member.priority">Mitglieder erhalten Antworten in unter 30 Minuten während Geschäftszeiten.</span>
         </div>
       </div>
     </div>

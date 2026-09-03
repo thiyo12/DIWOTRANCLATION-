@@ -1452,6 +1452,11 @@ app.post("/admin/api/payments/:id/confirm", requireAdmin, (req, res) => {
 // ============================================================== Site pages & static
 app.use("/js", express.static(path.join(ROOT, "js")));
 app.get("/healthz", (req, res) => res.set("Cache-Control", "no-store").send("ok"));
+app.get("/robots.txt", (req, res) => res.sendFile(path.join(ROOT, "robots.txt")));
+app.get("/sitemap.xml", (req, res) => {
+  res.set("Content-Type", "application/xml");
+  res.sendFile(path.join(ROOT, "sitemap.xml"));
+});
 app.use("/css", express.static(path.join(ROOT, "css")));
 app.use("/assets", express.static(path.join(ROOT, "assets")));
 app.use("/admin", express.static(path.join(ROOT, "admin")));
