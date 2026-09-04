@@ -1473,6 +1473,20 @@ app.get("/confirmation.html", (req, res) => res.sendFile(path.join(ROOT, "confir
 app.get("/track.html", (req, res) => res.sendFile(path.join(ROOT, "track.html")));
 app.get("/privacy.html", (req, res) => res.sendFile(path.join(ROOT, "privacy.html")));
 
+// ---- SEO landing pages ------------------------------------------------
+// One indexable page per booking option × language (DE at root, FR/EN/IT in
+// subfolders). Explicit routes above take precedence for the site's own pages.
+const seoRender = require("./seo/render");
+const seoIndex = require("./seo/pages").buildIndex();
+
+app.get(["/:file.html", "/fr/:file.html", "/en/:file.html", "/it/:file.html"], (req, res) => {
+  const slug = String(req.params.file || "").replace(/\.html$/i, "");
+  const hit = seoIndex[slug];
+  if (!hit) return res.status(404).send("Not found.");
+  res.set("Content-Type", "text/html; charset=utf-8");
+  res.send(seoRender.renderPage(hit.topic, hit.lang));
+});
+
 // error-cleanup to keep server from crashing
 app.use((err, req, res, next) => {
   if (err && (err.statusCode === 404 || err.statusCode === 400)) {

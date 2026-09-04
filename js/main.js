@@ -259,18 +259,18 @@ SSX.shellHeader = function () {
   const here = currentPage();
   const is = (page) => here === page ? " class=\"active\"" : "";
   return (
-    '<a class="brand" href="index.html">' +
-      '<img class="brand-logo" src="assets/brand/logo-head.png" alt="Ssaaxcy Solutions" width="67" height="54">' +
+    '<a class="brand" href="/index.html">' +
+      '<img class="brand-logo" src="/assets/brand/logo-head.png" alt="Ssaaxcy Solutions" width="67" height="54">' +
       '<span class="brand-name">Ssaaxcy Solutions<small data-i18n="brand.tag">' + SSX.t("brand.tag") + "</small></span>" +
     "</a>" +
     '<nav class="main-nav" aria-label="Main">' +
-      '<a href="index.html" data-i18n="nav.home"' + is("index.html") + ">" + SSX.t("nav.home") + "</a>" +
-      '<a href="services.html" data-i18n="nav.services"' + is("services.html") + ">" + SSX.t("nav.services") + "</a>" +
-      '<a href="translation.html" data-i18n="nav.translation"' + is("translation.html") + ">" + SSX.t("nav.translation") + "</a>" +
-      '<a href="fillform.html" data-i18n="nav.fillForm"' + is("fillform.html") + ">" + SSX.t("nav.fillForm") + "</a>" +
-      '<a href="concierge.html" data-i18n="nav.concierge"' + is("concierge.html") + ">" + SSX.t("nav.concierge") + "</a>" +
-      '<a href="track.html" data-i18n="track.nav"' + is("track.html") + ">" + SSX.t("track.nav") + "</a>" +
-      '<a href="booking.html" class="btn btn-primary nav-cta" data-i18n="nav.bookNow">' + SSX.t("nav.bookNow") + "</a>" +
+      '<a href="/index.html" data-i18n="nav.home"' + is("index.html") + ">" + SSX.t("nav.home") + "</a>" +
+      '<a href="/services.html" data-i18n="nav.services"' + is("services.html") + ">" + SSX.t("nav.services") + "</a>" +
+      '<a href="/translation.html" data-i18n="nav.translation"' + is("translation.html") + ">" + SSX.t("nav.translation") + "</a>" +
+      '<a href="/fillform.html" data-i18n="nav.fillForm"' + is("fillform.html") + ">" + SSX.t("nav.fillForm") + "</a>" +
+      '<a href="/concierge.html" data-i18n="nav.concierge"' + is("concierge.html") + ">" + SSX.t("nav.concierge") + "</a>" +
+      '<a href="/track.html" data-i18n="track.nav"' + is("track.html") + ">" + SSX.t("track.nav") + "</a>" +
+      '<a href="/booking.html" class="btn btn-primary nav-cta" data-i18n="nav.bookNow">' + SSX.t("nav.bookNow") + "</a>" +
     "</nav>" +
     '<span class="header-right">' +
       '<span data-lang-switcher></span>' +
@@ -298,7 +298,7 @@ SSX.shellFooter = function () {
   return (
     '<div class="container footer-grid">' +
       '<div class="footer-brand">' +
-        '<a class="brand" href="index.html"><span class="brand-plate"><img class="brand-logo brand-logo--dark" src="assets/brand/logo-head.png" alt="Ssaaxcy Solutions" width="67" height="54"></span><span class="brand-name brand-name--light">Ssaaxcy Solutions<small data-i18n="brand.tag">' + SSX.t("brand.tag") + "</small></span></a>" +
+        '<a class="brand" href="/index.html"><span class="brand-plate"><img class="brand-logo brand-logo--dark" src="/assets/brand/logo-head.png" alt="Ssaaxcy Solutions" width="67" height="54"></span><span class="brand-name brand-name--light">Ssaaxcy Solutions<small data-i18n="brand.tag">' + SSX.t("brand.tag") + "</small></span></a>" +
         '<p data-i18n="footer.tagline">' + SSX.t("footer.tagline") + "</p>" +
         SSX.socialLinks() +
         '<div class="cert-seal">' +
@@ -308,25 +308,25 @@ SSX.shellFooter = function () {
       "</div>" +
       '<div class="footer-col" data-i18n-wrap>' +
         "<h4>" + SSX.t("nav.services") + "</h4><ul>" +
-          '<li><a href="booking.html" data-i18n="nav.booking">' + SSX.t("nav.booking") + "</a></li>" +
-          '<li><a href="booking.html">' + SSX.t("svc.videoTitle") + "</a></li>" +
-          '<li><a href="fillform.html">' + SSX.t("svc.docTitle") + "</a></li>" +
-          '<li><a href="translation.html" data-i18n="nav.translation">' + SSX.t("nav.translation") + "</a></li>" +
-          '<li><a href="concierge.html" data-i18n="nav.concierge">' + SSX.t("nav.concierge") + "</a></li>" +
+          '<li><a href="/booking.html" data-i18n="nav.booking">' + SSX.t("nav.booking") + "</a></li>" +
+          '<li><a href="/booking.html">' + SSX.t("svc.videoTitle") + "</a></li>" +
+          '<li><a href="/fillform.html">' + SSX.t("svc.docTitle") + "</a></li>" +
+          '<li><a href="/translation.html" data-i18n="nav.translation">' + SSX.t("nav.translation") + "</a></li>" +
+          '<li><a href="/concierge.html" data-i18n="nav.concierge">' + SSX.t("nav.concierge") + "</a></li>" +
         "</ul></div>" +
       '<div class="footer-col"><h4>' + SSX.t("footer.quickLinks") + '</h4><ul>' +
-        '<li><a href="index.html" data-i18n="nav.home">' + SSX.t("nav.home") + "</a></li>" +
-        '<li><a href="services.html" data-i18n="nav.services">' + SSX.t("nav.services") + "</a></li>" +
-        '<li><a href="translation.html" data-i18n="nav.translation">' + SSX.t("nav.translation") + "</a></li>" +
-        '<li><a href="booking.html" data-i18n="nav.bookNow">' + SSX.t("nav.bookNow") + "</a></li>" +
-        '<li><a href="fillform.html" data-i18n="nav.fillForm">' + SSX.t("nav.fillForm") + "</a></li>" +
+        '<li><a href="/index.html" data-i18n="nav.home">' + SSX.t("nav.home") + "</a></li>" +
+        '<li><a href="/services.html" data-i18n="nav.services">' + SSX.t("nav.services") + "</a></li>" +
+        '<li><a href="/translation.html" data-i18n="nav.translation">' + SSX.t("nav.translation") + "</a></li>" +
+        '<li><a href="/booking.html" data-i18n="nav.bookNow">' + SSX.t("nav.bookNow") + "</a></li>" +
+        '<li><a href="/fillform.html" data-i18n="nav.fillForm">' + SSX.t("nav.fillForm") + "</a></li>" +
       "</ul></div>" +
       '<div class="footer-col"><h4>' + SSX.t("nav.contact") + '</h4><ul>' +
         '<li><a href="mailto:' + SSX.helpers.esc(SSX.settings.supportEmail) + '">' + SSX.helpers.esc(SSX.settings.supportEmail) + "</a></li>" +
         '<li><a href="tel:' + SSX.helpers.esc(String(SSX.settings.supportPhone).replace(/\s/g, "")) + '">' + SSX.helpers.esc(SSX.settings.supportPhone) + "</a></li>" +
         '<li>' + (SSX.settings.whatsapp ? '<a href="' + SSX.helpers.esc(SSX.waMe(SSX.settings.whatsapp)) + '" target="_blank" rel="noopener">WhatsApp</a>' : "") + "</li>" +
-        '<li><a href="track.html">' + SSX.t("track.nav") + "</a></li>" +
-        '<li><a href="privacy.html">' + SSX.t("privacy.link") + "</a></li>" +
+        '<li><a href="/track.html">' + SSX.t("track.nav") + "</a></li>" +
+        '<li><a href="/privacy.html">' + SSX.t("privacy.link") + "</a></li>" +
         '<li class="footer-addr">' + SSX.icon("map-pin", 13) + " " + SSX.t("footer.addr") + "</li>" +
       "</ul></div>" +
     "</div>" +
