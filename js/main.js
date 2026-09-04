@@ -331,7 +331,7 @@ SSX.shellFooter = function () {
       "</ul></div>" +
     "</div>" +
     '<div class="container footer-bottom"><span>© <span class="year"></span> ' + SSX.helpers.esc(SSX.settings.brandName) + ", Zürich, Switzerland. <span data-i18n=\"footer.rights\"></span></span>" +
-    '<span class="footer-credit">Maintainex.lk</span>' +
+    '<a class="footer-credit" href="https://maintainex.lk" target="_blank" rel="noopener">Maintainex.lk</a>' +
     '<span class="footer-pay">' + SSX.icon("lock", 13) + " Secure payment · Visa · Mastercard · TWINT · Invoice</span>" +
     "</div>"
   );
