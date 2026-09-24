@@ -1374,7 +1374,7 @@ app.patch("/admin/api/bookings/:id", requireAdmin, (req, res) => {
     set.push("status = ?");
     params.push(String(b.status));
     if (String(b.status) === "to_pay") {
-      set.push("payment_requested_at = CASE WHEN payment_requested_at = '' OR payment_requested_at IS NULL THEN datetime('now') ELSE payment_requested_at END");
+      set.push("payment_requested_at = datetime('now')");
     }
   }
   if (b.interpreter_id !== undefined) {
