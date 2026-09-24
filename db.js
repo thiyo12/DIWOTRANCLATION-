@@ -2,8 +2,9 @@ const { DatabaseSync } = require("node:sqlite");
 const path = require("node:path");
 const fs = require("node:fs");
 
-const DATA_DIR = path.join(__dirname, "data");
-const DB_PATH = path.join(DATA_DIR, "ssaaxcy.db");
+const DEFAULT_DATA_DIR = path.join(__dirname, "data");
+const DB_PATH = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(DEFAULT_DATA_DIR, "ssaaxcy.db");
+const DATA_DIR = path.dirname(DB_PATH);
 
 let db = null;
 
