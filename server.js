@@ -1199,36 +1199,39 @@ app.get("/api/bookings/:ref", refRateLimit, (req, res) => {
 
 app.post("/api/concierge", writeRateLimit, (req, res) => {
   const c = req.body || {};
-  if (!c.service || !c.detail || !LANG_CODES.includes(c.language_code || "")) {
+  const language = one("SELECT code, name FROM languages WHERE code = ?", [String(c.language_code || "").toUpperCase()]);
+  if (!c.service || !c.detail || !language) {
     return res.status(400).json({ ok: false, error: "service, language and detail are required." });
   }
   if (c.consent !== true && c.consent !== "1" && c.consent !== 1) {
     return res.status(400).json({ ok: false, error: "Privacy consent is required." });
   }
   const ref = genRef("SSX");
+  const accessToken = newCustomerToken();
   const files = splitFiles(c.files).slice(0, 5).join(",");
   run(
-    `INSERT INTO concierge (ref, service, title, language_code, language_name, detail, customer, email, phone, files, status, consent)
-     VALUES (?,?,?,?,?,?,?,?,?,?,'new',1)`,
-    [ref, String(c.service).slice(0, 30), String(c.title || "").slice(0, 200), c.language_code, langName(c.language_code),
+    `INSERT INTO concierge (ref, service, title, language_code, language_name, detail, customer, email, phone, files, status, consent, access_token_hash)
+     VALUES (?,?,?,?,?,?,?,?,?,?,'new',1,?)`,
+    [ref, String(c.service).slice(0, 30), String(c.title || "").slice(0, 200), language.code, language.name,
       String(c.detail).slice(0, 4000), String(c.customer || "").slice(0, 120), String(c.email || "").slice(0, 160),
-      String(c.phone || "").slice(0, 40), String(files).slice(0, 500)]
+      String(c.phone || "").slice(0, 40), String(files).slice(0, 500), hashToken(accessToken)]
   );
   sendMail(c.email, "Ssaaxcy Solutions — concierge request (" + ref + ")", confirmationHtml("We received your concierge request", [
     ["Reference", ref],
     ["Service", c.service],
-    ["Language", c.language_code],
-    ["Track your request", (process.env.BASE_URL || "https://ssaaxcy.ch") + "/track.html?ref=" + ref],
+    ["Language", language.code],
+    ["Track your request", secureTrackUrl(ref, accessToken)],
     ["Next step", "Our team contacts you within one working day."]
   ]));
-  res.json({ ok: true, ref });
+  res.json({ ok: true, ref, access_token: accessToken });
 });
 
-// Public concierge lookup — non-personal fields, used by the tracking page
+// Customer concierge lookup — secure token required.
 app.get("/api/concierge/:ref", refRateLimit, (req, res) => {
-  const c = one("SELECT ref, service, title, language_code, language_name, status, files, result_file FROM concierge WHERE ref = ?", [req.params.ref]);
-  if (!c) return res.status(404).json({ ok: false, error: "Not found." });
-  res.json({ ok: true, request: { ref: c.ref, service: c.service, title: c.title, language_code: c.language_code, language_name: c.language_name, status: c.status, hasFile: !!c.files, hasResult: !!c.result_file } });
+  if (!customerAuthorized(req, res, "concierge", req.params.ref)) return;
+  const row = one("SELECT ref, service, title, language_code, language_name, status, files, result_file FROM concierge WHERE ref = ?", [req.params.ref]);
+  if (!row) return res.status(404).json({ ok: false, error: "Not found." });
+  res.json({ ok: true, request: { ref: row.ref, service: row.service, title: row.title, language_code: row.language_code, language_name: row.language_name, status: row.status, hasFile: !!row.files, hasResult: !!row.result_file } });
 });
 
 // ============================================================== Admin data API
