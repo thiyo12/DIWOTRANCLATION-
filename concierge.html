@@ -237,8 +237,8 @@
       };
 
       var finish = function (ref, accessToken) {
-        if (accessToken) SSX.saveLocal("ssx.access." + ref, accessToken);
-        SSX.saveLocal("ssx.lastConcierge", Object.assign({ ref: ref, access_token: accessToken || "" }, payload));
+        if (accessToken) SSX.saveSecret("ssx.access." + ref, accessToken);
+        SSX.saveLocal("ssx.lastConcierge", Object.assign({ ref: ref }, payload));
         var modal = SSX.openModal(
           "<h3>" + SSX.t("cf.sentTitle") + "</h3>" +
           "<p class=\"muted\" style=\"margin:12px 0;\">" + SSX.t("cf.ref") + " <b>" + SSX.helpers.esc(ref) + "</b><br>" +
