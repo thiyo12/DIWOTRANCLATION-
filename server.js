@@ -1409,6 +1409,7 @@ app.patch("/admin/api/bookings/:id", requireAdmin, (req, res) => {
 
 app.delete("/admin/api/bookings/:id", requireAdmin, (req, res) => {
   const booking = one("SELECT * FROM bookings WHERE id = ?", [req.params.id]);
+  if (booking) splitFiles(booking.files).forEach(deleteUpload);
   run("DELETE FROM payments WHERE ref = ?", [booking ? booking.ref : req.params.id]);
   run("DELETE FROM bookings WHERE id = ?", [req.params.id]);
   if (booking) secEvent(req, "booking_erased", booking.ref + " (GDPR erasure)");
@@ -1429,7 +1430,13 @@ app.patch("/admin/api/concierge/:id", requireAdmin, (req, res) => {
 });
 
 app.delete("/admin/api/concierge/:id", requireAdmin, (req, res) => {
+  const row = one("SELECT ref, files, result_file FROM concierge WHERE id = ?", [req.params.id]);
+  if (row) {
+    splitFiles(row.files).forEach(deleteUpload);
+    if (row.result_file) deleteUpload(row.result_file);
+  }
   run("DELETE FROM concierge WHERE id = ?", [req.params.id]);
+  if (row) secEvent(req, "concierge_erased", row.ref + " (GDPR erasure)");
   res.json({ ok: true });
 });
 
@@ -1572,7 +1579,11 @@ app.patch("/admin/api/documents/:id", requireAdmin, (req, res) => {
 });
 
 app.delete("/admin/api/documents/:id", requireAdmin, (req, res) => {
-  const d = one("SELECT ref FROM document_requests WHERE id = ?", [req.params.id]);
+  const d = one("SELECT ref, attachment, result_file FROM document_requests WHERE id = ?", [req.params.id]);
+  if (d) {
+    splitFiles(d.attachment).forEach(deleteUpload);
+    if (d.result_file) deleteUpload(d.result_file);
+  }
   run("DELETE FROM document_requests WHERE id = ?", [req.params.id]);
   if (d) secEvent(req, "doc_erased", d.ref + " (GDPR erasure)");
   res.json({ ok: true });
@@ -1592,17 +1603,24 @@ const resultUpload = upload.single("file");
 function attachResult(req, res, table, id, email) {
   resultUpload(req, res, function (err) {
     if (err) return res.status(400).json({ ok: false, error: "Upload failed. Max 25 MB (PDF, Word, JPG, PNG, HEIC, TXT)." });
-    const f = req.file && req.file.filename;
+    const file = req.file;
+    const f = file && file.filename;
     if (!f) return res.status(400).json({ ok: false, error: "No file received." });
+    if (!validUploadSignature(file)) {
+      deleteUpload(f);
+      secEvent(req, "result_upload_reject", table + " #" + id + " invalid signature");
+      return res.status(400).json({ ok: false, error: "The uploaded result does not match its declared file type." });
+    }
     const row = one("SELECT ref FROM " + table + " WHERE id = ?", [id]);
-    if (!row) return res.status(404).json({ ok: false, error: "Request not found." });
-    run("UPDATE " + table + " SET result_file = ?, status = 'done' WHERE id = ?", [f, id]);
+    if (!row) { deleteUpload(f); return res.status(404).json({ ok: false, error: "Request not found." }); }
+    const accessToken = newCustomerToken();
+    run("UPDATE " + table + " SET result_file = ?, status = 'done', access_token_hash = ? WHERE id = ?", [f, hashToken(accessToken), id]);
     secEvent(req, "doc_result", table + " #" + id + " result uploaded (" + row.ref + ")");
     if (email) {
       sendMail(email, "Ssaaxcy Solutions — your document is ready (" + row.ref + ")", confirmationHtml("Your document is ready", [
         ["Reference", row.ref],
-        ["Download", (process.env.BASE_URL || "https://ssaaxcy.ch") + "/track.html?ref=" + row.ref],
-        ["Note", "The finished document is available for download on your request page."]
+        ["Download securely", secureTrackUrl(row.ref, accessToken)],
+        ["Note", "The finished document is available for download on your secure request page."]
       ]));
     }
     res.json({ ok: true, file: f });
@@ -1738,25 +1756,80 @@ ensureAdminSeed();
 // --------------------------------------------------------------------------
 // Maintenance — retention & housekeeping
 // --------------------------------------------------------------------------
+function cancelExpiredBooking(ref, reason) {
+  tx(function (db) {
+    db.prepare("UPDATE bookings SET status = 'cancelled', cancel_reason = ? WHERE ref = ?").run(reason, ref);
+    db.prepare("UPDATE payments SET status = 'cancelled' WHERE ref = ?").run(ref);
+  });
+}
+
 function sweepExpiredPayments() {
   try {
-    const rows = q(
-      "SELECT b.ref FROM bookings b JOIN payments p ON p.ref = b.ref " +
-      "WHERE b.status = 'requested' AND p.status = 'unpaid' " +
-      "AND b.created_at <= datetime('now', '-30 minutes')"
+    const requested = q(
+      "SELECT ref FROM bookings WHERE status = 'requested' AND created_at <= datetime('now', '-12 hours')"
     );
-    if (!rows.length) return;
-    rows.forEach(function (r) {
-      tx(function (db) {
-        db.prepare("UPDATE bookings SET status = 'cancelled', cancel_reason = ? WHERE ref = ?")
-          .run("Auto-cancelled: payment not completed within 30 minutes.", r.ref);
-        db.prepare("UPDATE payments SET status = 'cancelled' WHERE ref = ?")
-          .run(r.ref);
-      });
+    requested.forEach(function (r) {
+      cancelExpiredBooking(r.ref, "Auto-cancelled: request was not approved within 12 hours.");
     });
-    console.log("[expiry] auto-cancelled " + rows.length + " unpaid booking(s)");
+
+    const twint = q(
+      "SELECT ref FROM bookings WHERE status = 'to_pay' AND method = 'twint' AND payment_requested_at != '' " +
+      "AND payment_requested_at <= datetime('now', '-45 minutes')"
+    );
+    twint.forEach(function (r) {
+      cancelExpiredBooking(r.ref, "Auto-cancelled: TWINT payment window expired.");
+    });
+
+    const bank = q(
+      "SELECT ref FROM bookings WHERE status = 'to_pay' AND method = 'bank' AND payment_requested_at != '' " +
+      "AND payment_requested_at <= datetime('now', '-48 hours')"
+    );
+    bank.forEach(function (r) {
+      cancelExpiredBooking(r.ref, "Auto-cancelled: bank transfer payment window expired.");
+    });
+
+    const count = requested.length + twint.length + bank.length;
+    if (count) console.log("[expiry] auto-cancelled " + count + " booking(s)");
   } catch (e) {
     console.error("[expiry] failed: " + e.message);
+  }
+}
+
+function removeRecordFiles(rows, fields) {
+  rows.forEach(function (row) {
+    fields.forEach(function (field) {
+      splitFiles(row[field]).forEach(deleteUpload);
+    });
+  });
+}
+
+function removeOrphanUploads() {
+  try {
+    const used = new Set();
+    q("SELECT files FROM bookings").forEach(function (r) { splitFiles(r.files).forEach(function (x) { used.add(x); }); });
+    q("SELECT attachment, result_file FROM document_requests").forEach(function (r) {
+      splitFiles(r.attachment).forEach(function (x) { used.add(x); });
+      splitFiles(r.result_file).forEach(function (x) { used.add(x); });
+    });
+    q("SELECT files, result_file FROM concierge").forEach(function (r) {
+      splitFiles(r.files).forEach(function (x) { used.add(x); });
+      splitFiles(r.result_file).forEach(function (x) { used.add(x); });
+    });
+    const cutoff = Date.now() - 24 * 3600000;
+    fs.readdirSync(UPLOADS_DIR).forEach(function (dir) {
+      const monthDir = path.join(UPLOADS_DIR, dir);
+      if (!fs.statSync(monthDir).isDirectory()) return;
+      fs.readdirSync(monthDir).forEach(function (name) {
+        if (used.has(name)) return;
+        const p = path.join(monthDir, name);
+        try {
+          const st = fs.statSync(p);
+          if (st.isFile() && st.mtimeMs < cutoff) fs.unlinkSync(p);
+        } catch (e) {}
+      });
+    });
+  } catch (e) {
+    console.error("[cleanup] orphan upload scan failed: " + e.message);
   }
 }
 
@@ -1768,9 +1841,21 @@ function runCleanup() {
     run("DELETE FROM ip_blocks WHERE until < datetime('now')");
     const rm = Math.max(1, NumberSetting("retention_months") || 24);
     const cutoff = new Date(Date.now() - rm * 30.44 * 86400000).toISOString().slice(0, 19).replace("T", " ");
+
+    const oldBookings = q("SELECT ref, files FROM bookings WHERE created_at < ? AND status IN ('completed','cancelled','refunded')", [cutoff]);
+    removeRecordFiles(oldBookings, ["files"]);
     run("DELETE FROM bookings WHERE created_at < ? AND status IN ('completed','cancelled','refunded')", [cutoff]);
     run("DELETE FROM payments WHERE ref NOT IN (SELECT ref FROM bookings)");
+
+    const oldDocs = q("SELECT attachment, result_file FROM document_requests WHERE created_at < ? AND status IN ('done','cancelled')", [cutoff]);
+    removeRecordFiles(oldDocs, ["attachment", "result_file"]);
     run("DELETE FROM document_requests WHERE created_at < ? AND status IN ('done','cancelled')", [cutoff]);
+
+    const oldConcierge = q("SELECT files, result_file FROM concierge WHERE created_at < ? AND status IN ('closed','done')", [cutoff]);
+    removeRecordFiles(oldConcierge, ["files", "result_file"]);
+    run("DELETE FROM concierge WHERE created_at < ? AND status IN ('closed','done')", [cutoff]);
+
+    removeOrphanUploads();
     console.log("[cleanup] retention run complete (" + rm + " months)");
   } catch (e) {
     console.error("[cleanup] failed: " + e.message);
