@@ -287,7 +287,8 @@
       document.getElementById("sm-host").value = CAT.settings.smtp_host || "";
       document.getElementById("sm-port").value = CAT.settings.smtp_port || "587";
       document.getElementById("sm-user").value = CAT.settings.smtp_user || "";
-      document.getElementById("sm-pass").value = CAT.settings.smtp_pass || "";
+      document.getElementById("sm-pass").value = "";
+      document.getElementById("sm-pass").placeholder = CAT.settings.smtp_pass_set ? "Configured — leave blank to keep current password" : "SMTP password";
       document.getElementById("sm-from").value = CAT.settings.smtp_from || "";
       document.getElementById("sm-secure").value = CAT.settings.smtp_secure || "0";
     }
@@ -328,7 +329,7 @@
           '<h2>Enable two-step verification</h2>' +
           '<p class="small muted">Scan this QR with Google Authenticator, Authy or another TOTP app, then enter the 6-digit code to confirm.</p>' +
           '<div class="card card-pad" style="text-align:center;margin:14px 0;">' +
-          '<img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(url) + '" alt="QR code" width="180" height="180" style="border-radius:10px;">' +
+          (d.qrDataUrl ? '<img src="' + SS.esc(d.qrDataUrl) + '" alt="QR code" width="180" height="180" style="border-radius:10px;">' : '') +
           '<p class="small muted mt" style="word-break:break-all;">' + SS.esc(d.secret) + '</p></div>' +
           '<div class="field"><label>Verification code</label><input class="input" id="fa-code" inputmode="numeric" maxlength="6" placeholder="000 000"></div>' +
           '<button class="btn btn-red btn-block" id="fa-confirm">Confirm &amp; enable</button>'
