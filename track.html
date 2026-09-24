@@ -32,12 +32,16 @@
       <h1 class="section-title" style="font-size:1.9rem;" data-i18n="track.title"></h1>
       <p class="muted" style="margin-bottom:22px;" data-i18n="track.subtitle"></p>
 
-      <form id="tr-form" class="two-col" novalidate>
-        <div class="field" style="flex:1;">
+      <form id="tr-form" class="grid-2" novalidate>
+        <div class="field">
           <label data-i18n="track.refLabel"></label>
           <input class="input" id="tr-ref" placeholder="" autocomplete="off" style="text-transform:uppercase;">
         </div>
-        <div class="field" style="align-self:flex-end;">
+        <div class="field">
+          <label data-i18n="booking.email"></label>
+          <input class="input" id="tr-email" type="email" placeholder="name@example.com" autocomplete="email">
+        </div>
+        <div class="field" style="grid-column:1/-1;">
           <button type="submit" class="btn btn-primary" id="tr-go" data-i18n="track.lookup"></button>
         </div>
       </form>
@@ -99,8 +103,13 @@
       }
     }
 
-    function tryGet(path) {
-      return SSX.request("GET", path).then(function (j) { return j; });
+    function securePath(path, token) {
+      if (!token) return path;
+      return path + (path.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(token);
+    }
+
+    function tryGet(path, token) {
+      return SSX.request("GET", securePath(path, token)).then(function (j) { return j; });
     }
 
     function waShare(text) {
@@ -109,7 +118,7 @@
       return SSX.waMe(n) + "?text=" + encodeURIComponent(text);
     }
 
-    function lookup(ref) {
+    function lookup(ref, token) {
       var r = document.getElementById("tr-result");
       r.innerHTML = '<p class="muted small">' + SSX.t("common.loading") + "</p>";
       var isDoc = ref.indexOf("SSXD") === 0;
@@ -126,7 +135,7 @@
         html += row(SSX.t("booking.languageLabel"), SSX.helpers.esc(b.from_lang) + " → " + SSX.helpers.esc(b.to_lang));
         html += "</div>";
         if (b.status === "done" && b.hasResult) {
-          html += '<div class="dl-row"><a class="btn btn-primary" href="/api/documents/' + encodeURIComponent(ref) + '/result">' +
+          html += '<div class="dl-row"><a class="btn btn-primary" href="/api/documents/' + encodeURIComponent(ref) + '/result?token=' + encodeURIComponent(token) + '">' +
             SSX.icon("download", 16) + " " + SSX.t("track.download") + "</a></div>";
         }
         show(html);
@@ -144,7 +153,7 @@
         if (b.files && b.files.length) {
           html += '<div class="card detail-table" style="margin-top:14px;"><h3 style="margin-bottom:10px;">' + SSX.t("track.yourFiles") + "</h3>";
           b.files.forEach(function (f) {
-            html += row(SSX.fileLabel(f), '<a href="/api/bookings/' + encodeURIComponent(ref) + "/file/" + encodeURIComponent(f) + '">' + SSX.icon("download", 14) + " " + SSX.t("common.download") + "</a>");
+            html += row(SSX.fileLabel(f), '<a href="/api/bookings/' + encodeURIComponent(ref) + "/file/" + encodeURIComponent(f) + '?token=' + encodeURIComponent(token) + '">' + SSX.icon("download", 14) + " " + SSX.t("common.download") + "</a>");
           });
           html += "</div>";
         }
@@ -162,7 +171,7 @@
         html += row(SSX.t("confirm.status"), badge(b.status));
         html += "</div>";
         if (b.status === "done" && b.hasResult) {
-          html += '<div class="dl-row"><a class="btn btn-primary" href="/api/concierge/' + encodeURIComponent(ref) + '/result">' +
+          html += '<div class="dl-row"><a class="btn btn-primary" href="/api/concierge/' + encodeURIComponent(ref) + '/result?token=' + encodeURIComponent(token) + '">' +
             SSX.icon("download", 16) + " " + SSX.t("track.download") + "</a></div>";
         }
         show(html);
@@ -170,14 +179,14 @@
       }
 
       if (isDoc) {
-        return tryGet("/api/documents/" + encodeURIComponent(ref)).then(function (j) {
+        return tryGet("/api/documents/" + encodeURIComponent(ref), token).then(function (j) {
           renderDoc(j.request);
         }).catch(notFound);
       }
-      return tryGet("/api/bookings/" + encodeURIComponent(ref)).then(function (j) {
+      return tryGet("/api/bookings/" + encodeURIComponent(ref), token).then(function (j) {
         renderBooking(j.booking);
       }).catch(function () {
-        return tryGet("/api/concierge/" + encodeURIComponent(ref)).then(function (j) {
+        return tryGet("/api/concierge/" + encodeURIComponent(ref), token).then(function (j) {
           renderConcierge(j.request);
         }).catch(notFound);
       });
@@ -186,13 +195,46 @@
     document.addEventListener("DOMContentLoaded", function () {
       var q = new URLSearchParams(window.location.search);
       var auto = (q.get("ref") || "").toUpperCase().trim();
+      var urlToken = q.get("token") || "";
       var inp = document.getElementById("tr-ref");
+      var emailInp = document.getElementById("tr-email");
+
+      function openSecure(ref, token) {
+        if (!ref || !token) return;
+        SSX.saveSecret("ssx.access." + ref, token);
+        lookup(ref, token);
+      }
+
       document.getElementById("tr-form").addEventListener("submit", function (e) {
         e.preventDefault();
         var ref = inp.value.toUpperCase().trim();
-        if (ref) lookup(ref);
+        if (!ref) return;
+        var saved = SSX.loadSecret("ssx.access." + ref) || "";
+        if (saved) return openSecure(ref, saved);
+        var email = emailInp.value.trim();
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+          SSX.toast(SSX.t("err.email"), "error");
+          return;
+        }
+        show('<p class="muted small">' + SSX.t("common.loading") + "</p>");
+        SSX.request("POST", "/api/access", { ref: ref, email: email }).then(function (res) {
+          openSecure(ref, res.token);
+          try {
+            history.replaceState(null, "", "track.html?ref=" + encodeURIComponent(ref));
+          } catch (e2) {}
+        }).catch(function (err) {
+          show('<div class="card card-pad"><p class="muted">' + SSX.helpers.esc(err.message || SSX.t("track.notFound")) + "</p></div>");
+        });
       });
-      if (auto) { inp.value = auto; lookup(auto); }
+
+      if (auto) {
+        inp.value = auto;
+        var token = urlToken || SSX.loadSecret("ssx.access." + auto) || "";
+        if (urlToken) {
+          try { history.replaceState(null, "", "track.html?ref=" + encodeURIComponent(auto)); } catch (e3) {}
+        }
+        if (token) openSecure(auto, token);
+      }
     });
   </script>
 </body>

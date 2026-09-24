@@ -236,6 +236,12 @@ SSX.saveLocal = function (key, value) {
 SSX.loadLocal = function (key) {
   try { return JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { return null; }
 };
+SSX.saveSecret = function (key, value) {
+  try { sessionStorage.setItem(key, String(value || "")); } catch (e) {}
+};
+SSX.loadSecret = function (key) {
+  try { return sessionStorage.getItem(key) || ""; } catch (e) { return ""; }
+};
 SSX.bookingsLocal = function () {
   return SSX.loadLocal("ssx.bookings") || [];
 };

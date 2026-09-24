@@ -62,10 +62,12 @@
     }
 
     var curBooking = null;
-    function loadBooking(ref, cb) {
+    var curAccessToken = "";
+    function loadBooking(ref, token, cb) {
       if (SSX.http) {
         var path = ref.indexOf("SSXD") === 0 ? "/api/documents/" : "/api/bookings/";
-        SSX.request("GET", path + encodeURIComponent(ref))
+        var url = path + encodeURIComponent(ref) + (token ? "?token=" + encodeURIComponent(token) : "");
+        SSX.request("GET", url)
           .then(function (res) {
             cb(Object.assign({}, res.booking || res.request, { payment: res.payment }), ref.indexOf("SSXD") === 0);
           })
@@ -76,8 +78,17 @@
     }
 
     document.addEventListener("DOMContentLoaded", function () {
-      var ref = new URLSearchParams(window.location.search).get("ref");
-      var isDoc = new URLSearchParams(window.location.search).get("kind") === "document" || (ref && ref.indexOf("SSXD") === 0);
+      var params = new URLSearchParams(window.location.search);
+      var ref = params.get("ref");
+      var isDoc = params.get("kind") === "document" || (ref && ref.indexOf("SSXD") === 0);
+      var tokenFromUrl = params.get("token") || "";
+      curAccessToken = tokenFromUrl || (ref ? SSX.loadSecret("ssx.access." + ref) : "") || "";
+      if (ref && curAccessToken) SSX.saveSecret("ssx.access." + ref, curAccessToken);
+      if (ref && tokenFromUrl) {
+        try {
+          history.replaceState(null, "", "confirmation.html?ref=" + encodeURIComponent(ref) + (isDoc ? "&kind=document" : ""));
+        } catch (e) {}
+      }
       if (!ref) ref = SSX.loadLocal(isDoc ? "ssx.lastDocRef" : "ssx.lastRef");
       if (!ref) { window.location.href = isDoc ? "fillform.html" : "booking.html"; return; }
 
@@ -90,7 +101,7 @@
         if (bits.length) { cc.innerHTML = bits.join(""); cc.style.display = "flex"; }
       }
 
-      loadBooking(ref, function (b, doc) {
+      loadBooking(ref, curAccessToken, function (b, doc) {
         curBooking = b;
         var table = document.getElementById("detail-table");
         if (!b) {
@@ -114,7 +125,7 @@
           if (b.hasResult) {
             var dl = document.createElement("div");
             dl.className = "dl-row";
-            dl.innerHTML = '<a class="btn btn-primary" href="/api/documents/' + encodeURIComponent(ref) + '/result">' + SSX.icon("download", 16) + " " + SSX.t("track.download") + "</a>";
+            dl.innerHTML = '<a class="btn btn-primary" href="/api/documents/' + encodeURIComponent(ref) + '/result?token=' + encodeURIComponent(curAccessToken) + '">' + SSX.icon("download", 16) + " " + SSX.t("track.download") + "</a>";
             table.appendChild(dl);
           }
         } else {
@@ -140,7 +151,7 @@
             ? SSX.t("confirm.videoNote")
             : SSX.t("confirm.siteNote");
           renderPayBox(b);
-          pollStatus(ref);
+          pollStatus(ref, curAccessToken);
         }
       });
     });
@@ -217,10 +228,10 @@
       box.innerHTML = html;
     }
 
-    function pollStatus(ref) {
-      if (!SSX.http) return;
+    function pollStatus(ref, token) {
+      if (!SSX.http || !token) return;
       var timer = setInterval(function () {
-        SSX.request("GET", "/api/bookings/" + encodeURIComponent(ref))
+        SSX.request("GET", "/api/bookings/" + encodeURIComponent(ref) + "?token=" + encodeURIComponent(token))
           .then(function (res) {
             var b = Object.assign({}, res.booking, { payment: res.payment });
             if (!b) { clearInterval(timer); return; }

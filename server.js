@@ -43,12 +43,12 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "https://www.googletagmanager.com"],
         scriptSrcAttr: ["'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
         imgSrc: ["'self'", "data:", "blob:"],
-        connectSrc: ["'self'"],
+        connectSrc: ["'self'", "https://www.google-analytics.com", "https://region1.google-analytics.com"],
         frameAncestors: ["'none'"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
@@ -151,8 +151,41 @@ function splitFiles(raw) {
   return [];
 }
 
+function deleteUpload(name) {
+  const p = resolveUpload(name);
+  if (!p) return false;
+  try { fs.unlinkSync(p); return true; } catch (e) { return false; }
+}
+
+function validUploadSignature(file) {
+  try {
+    const p = file.path || resolveUpload(file.filename);
+    if (!p) return false;
+    const fd = fs.openSync(p, "r");
+    const buf = Buffer.alloc(32);
+    const read = fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+    const b = buf.subarray(0, read);
+    const ext = String(file.filename || "").split(".").pop().toLowerCase();
+    if (ext === "pdf") return b.subarray(0, 5).toString("ascii") === "%PDF-";
+    if (ext === "jpg" || ext === "jpeg") return b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+    if (ext === "png") return b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]));
+    if (ext === "doc") return b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]));
+    if (ext === "docx") return b.length >= 4 && b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04;
+    if (ext === "heic" || ext === "heif") {
+      const s = b.toString("ascii");
+      return s.indexOf("ftyp") >= 0 && /(heic|heix|hevc|hevx|mif1|msf1)/.test(s);
+    }
+    if (ext === "txt") {
+      const sample = fs.readFileSync(p).subarray(0, 4096);
+      return sample.indexOf(0) === -1;
+    }
+  } catch (e) {}
+  return false;
+}
+
 // Origin allow-list for public writes: cross-site scripts cannot submit forms.
-app.use(["/api/bookings", "/api/documents", "/api/concierge", "/api/upload"], (req, res, next) => {
+app.use(["/api/bookings", "/api/documents", "/api/concierge", "/api/upload", "/api/access"], (req, res, next) => {
   const origin = req.headers && req.headers.origin;
   if (origin) {
     try {
@@ -224,12 +257,37 @@ function loadSetting(key, fallback = "") {
   return r ? r.value : fallback;
 }
 
-const SECRET_SETTING_KEYS = new Set(["admin_pw_hash", "admin_2fa_secret"]);
+const PUBLIC_SETTING_KEYS = new Set([
+  "brand_name", "support_email", "support_phone", "whatsapp", "instagram", "facebook", "linkedin", "tiktok",
+  "hero_image_url", "flag_style", "travel_fee", "currency", "ref_prefix", "canton_surcharge",
+  "doc_plain_word", "doc_cert_word", "doc_urgent_pct", "video_price",
+  "pay_twint_ref", "pay_iban", "pay_bank_name", "twint_payment_url",
+  "work_start", "work_end", "work_days", "lead_days", "visit_buffer_min", "video_buffer_min",
+  "doc_flat", "doc_flat_tax", "doc_last_minute", "doc_urgent_flat", "privacy_version"
+]);
+const ADMIN_VISIBLE_SETTING_KEYS = new Set([
+  ...PUBLIC_SETTING_KEYS,
+  "smtp_host", "smtp_port", "smtp_user", "smtp_from", "smtp_secure",
+  "lockout_max", "lockout_minutes", "retention_months", "pause_bookings", "admin_pw_changed"
+]);
+
+function pickSettings(keys) {
+  const all = loadSettings();
+  const out = {};
+  keys.forEach(function (k) {
+    if (Object.prototype.hasOwnProperty.call(all, k)) out[k] = all[k];
+  });
+  return out;
+}
 
 function publicSettings() {
-  const s = loadSettings();
-  SECRET_SETTING_KEYS.forEach((k) => delete s[k]);
-  return s;
+  return pickSettings(PUBLIC_SETTING_KEYS);
+}
+
+function adminSettings() {
+  const out = pickSettings(ADMIN_VISIBLE_SETTING_KEYS);
+  out.smtp_pass_set = !!(process.env.SMTP_PASS || loadSetting("smtp_pass", ""));
+  return out;
 }
 
 function NumberSetting(key) {
@@ -285,69 +343,112 @@ function dayInfo(dateStr) {
   if (pauseEnabled()) reason.push("paused");
   return { closed: reason.length > 0, reasons: reason, day };
 }
-function activeBookings(dateStr) {
+function activeWorkers(languageCode) {
+  const rows = q("SELECT id, name, languages, zones, is_primary FROM interpreters WHERE active = 1 ORDER BY is_primary DESC, id ASC");
+  const code = String(languageCode || "").toUpperCase();
+  if (!code) return rows;
+  return rows.filter(function (w) {
+    return String(w.languages || "").split(",").map(function (x) { return x.trim().toUpperCase(); }).includes(code);
+  });
+}
+
+function workerRosterEnabled() {
+  const r = one("SELECT COUNT(*) c FROM interpreters WHERE active = 1");
+  return !!(r && Number(r.c) > 0);
+}
+
+function activeBookings(dateStr, interpreterId) {
+  if (interpreterId) {
+    // Unassigned legacy/current-owner bookings block every worker until Admin assigns them.
+    return q(
+      "SELECT date, time, duration, mode, status, interpreter_id FROM bookings WHERE date = ? AND (interpreter_id = ? OR interpreter_id IS NULL) AND status IN ('requested','to_pay','pending','confirmed','paid','completed')",
+      [dateStr, interpreterId]
+    );
+  }
   return q(
-    "SELECT date, time, duration, mode, status FROM bookings WHERE date = ? AND status IN ('requested','to_pay','pending','confirmed','paid','completed')",
+    "SELECT date, time, duration, mode, status, interpreter_id FROM bookings WHERE date = ? AND status IN ('requested','to_pay','pending','confirmed','paid','completed')",
     [dateStr]
   );
 }
-function occupiedIntervals(dateStr) {
-  return activeBookings(dateStr).map(function (b) {
+
+function occupiedIntervals(dateStr, interpreterId) {
+  return activeBookings(dateStr, interpreterId).map(function (b) {
     const s = parseHM(b.time);
     if (s === null) return null;
     const buf = bufferFor(b.mode);
     return { from: s - buf, to: s + (Number(b.duration) || 60) + buf };
   }).filter(Boolean);
 }
-function isBusy(dateStr, startMin, durMins) {
-  const iv = occupiedIntervals(dateStr);
+
+function isBusy(dateStr, startMin, durMins, interpreterId) {
+  const iv = occupiedIntervals(dateStr, interpreterId);
   const a = startMin, b = startMin + durMins;
   for (const x of iv) {
     if (a < x.to && b > x.from) return true;
   }
   return false;
 }
-function freeSlots(dateStr, mode, durMins) {
+
+function availableWorker(dateStr, startMin, durMins, languageCode) {
+  const workers = activeWorkers(languageCode);
+  for (const w of workers) {
+    if (!isBusy(dateStr, startMin, durMins, w.id)) return w;
+  }
+  return null;
+}
+
+function freeSlots(dateStr, mode, durMins, languageCode) {
   const info = dayInfo(dateStr);
   if (info.closed) return [];
   if (dateStr < minBookingDate()) return [];
   const w = workBounds();
   const dur = Number(durMins) || 60;
   const out = [];
+  const roster = workerRosterEnabled();
   for (let t = w.start; t + dur <= w.end; t += 30) {
-    if (!isBusy(dateStr, t, dur)) out.push(fmtHM(t));
+    const free = roster ? !!availableWorker(dateStr, t, dur, languageCode) : !isBusy(dateStr, t, dur, null);
+    if (free) out.push(fmtHM(t));
   }
   return out;
 }
-function nextFree(mode, durMins) {
+
+function nextFree(mode, durMins, languageCode) {
   const from = minBookingDate();
   const d = new Date(from + "T00:00:00Z");
   for (let i = 0; i < 21; i++) {
     const ds = d.toISOString().slice(0, 10);
-    const slots = freeSlots(ds, mode, durMins);
+    const slots = freeSlots(ds, mode, durMins, languageCode);
     if (slots.length) return { date: ds, time: slots[0] };
     d.setUTCDate(d.getUTCDate() + 1);
   }
   return { date: null, time: null };
 }
-function bookingBlock(dateStr, timeStr, mode, durMins) {
+
+function bookingBlock(dateStr, timeStr, mode, durMins, languageCode) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return { ok: false, status: 400, error: "Invalid date." };
-  if (pauseEnabled()) return { ok: false, status: 409, error: "We are not taking new appointments right now.", nextFree: nextFree(mode, durMins) };
+  if (pauseEnabled()) return { ok: false, status: 409, error: "We are not taking new appointments right now.", nextFree: nextFree(mode, durMins, languageCode) };
   const info = dayInfo(dateStr);
   if (info.closed) {
-    if (info.reasons.includes("override")) return { ok: false, status: 409, error: "This day is no longer available.", nextFree: nextFree(mode, durMins) };
+    if (info.reasons.includes("override")) return { ok: false, status: 409, error: "This day is no longer available.", nextFree: nextFree(mode, durMins, languageCode) };
     return { ok: false, status: 400, error: "This day is not a working day." };
   }
   if (dateStr < minBookingDate()) return { ok: false, status: 400, error: "Appointments must be requested at least " + (NumberSetting("lead_days") || 2) + " days in advance." };
   const t = parseHM(timeStr);
   if (t === null) return { ok: false, status: 400, error: "Invalid time." };
   const dur = Number(durMins) || 60;
-  const w = workBounds();
-  if (t < w.start || t + dur > w.end) return { ok: false, status: 400, error: "This time is outside working hours." };
-  if (isBusy(dateStr, t, dur)) {
-    return { ok: false, status: 409, error: "This time was just taken by someone else.", nextFree: nextFree(mode, dur) };
+  const bounds = workBounds();
+  if (t < bounds.start || t + dur > bounds.end) return { ok: false, status: 400, error: "This time is outside working hours." };
+
+  if (workerRosterEnabled()) {
+    const worker = availableWorker(dateStr, t, dur, languageCode);
+    if (!worker) return { ok: false, status: 409, error: "This time was just taken by someone else.", nextFree: nextFree(mode, dur, languageCode) };
+    return { ok: true, interpreterId: worker.id };
   }
-  return { ok: true };
+
+  if (isBusy(dateStr, t, dur, null)) {
+    return { ok: false, status: 409, error: "This time was just taken by someone else.", nextFree: nextFree(mode, dur, languageCode) };
+  }
+  return { ok: true, interpreterId: null };
 }
 
 function genRef(prefix) {
@@ -373,7 +474,7 @@ function twintPaymentUrl(ref, total) {
       .replace(/\{amount\}/gi, encodeURIComponent(amount))
       .replace(/\{total\}/gi, encodeURIComponent(String(Number(total) || 0)));
   }
-  return "https://www.twint.ch/merchant-payment/" + encodeURIComponent(ref);
+  return "";
 }
 
 function twintQrDataUrl(url) {
@@ -415,7 +516,49 @@ function langName(code) {
 // GATE 2 — identity: admin sessions (hashed in DB), bcrypt, CSRF, 2FA
 // --------------------------------------------------------------------------
 function hashToken(token) {
-  return crypto.createHash("sha256").update(token).digest("hex");
+  return crypto.createHash("sha256").update(String(token || "")).digest("hex");
+}
+
+function newCustomerToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function customerTokenFromRequest(req) {
+  return String((req.headers && req.headers["x-request-token"]) || (req.query && req.query.token) || "").trim();
+}
+
+const REQUEST_TABLES = {
+  booking: "bookings",
+  document: "document_requests",
+  concierge: "concierge"
+};
+
+function customerAuthorized(req, res, kind, ref) {
+  const table = REQUEST_TABLES[kind];
+  if (!table) return null;
+  const row = one("SELECT access_token_hash FROM " + table + " WHERE ref = ?", [ref]);
+  if (!row) {
+    res.status(404).json({ ok: false, error: "Not found." });
+    return null;
+  }
+  const token = customerTokenFromRequest(req);
+  if (!token || !row.access_token_hash) {
+    res.status(401).json({ ok: false, error: "Secure access required. Use your email and reference to open this request." });
+    return null;
+  }
+  const given = Buffer.from(hashToken(token), "hex");
+  const expected = Buffer.from(String(row.access_token_hash), "hex");
+  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
+    secEvent(req, "customer_token_fail", kind + " " + String(ref).slice(0, 40));
+    res.status(401).json({ ok: false, error: "Secure access link is invalid or expired." });
+    return null;
+  }
+  return row;
+}
+
+function secureTrackUrl(ref, token) {
+  return (process.env.BASE_URL || "https://ssaaxcy.ch") +
+    "/track.html?ref=" + encodeURIComponent(ref) + "&token=" + encodeURIComponent(token);
 }
 
 function requestFingerprint(req) {
@@ -561,7 +704,12 @@ function confirmationHtml(title, lines) {
 
 function sendMail(to, subject, html) {
   return new Promise((resolve) => {
-    const host = loadSetting("smtp_host", "");
+    const host = process.env.SMTP_HOST || loadSetting("smtp_host", "");
+    const user = process.env.SMTP_USER || loadSetting("smtp_user", "");
+    const pass = process.env.SMTP_PASS || loadSetting("smtp_pass", "");
+    const port = Number(process.env.SMTP_PORT || loadSetting("smtp_port", "587"));
+    const secure = String(process.env.SMTP_SECURE || loadSetting("smtp_secure", "0")) === "1";
+    const from = process.env.SMTP_FROM || loadSetting("smtp_from", "") || ('Ssaaxcy Solutions <' + loadSetting("support_email", "support@ssaaxcy.ch") + ">");
     if (!to || !host) {
       const why = !to ? "no recipient" : "smtp not configured";
       console.log("[mail-deferred] " + why + " :: " + subject + " → " + to);
@@ -570,13 +718,13 @@ function sendMail(to, subject, html) {
     try {
       const transport = nodemailer.createTransport({
         host,
-        port: Number(loadSetting("smtp_port", "587")),
-        secure: loadSetting("smtp_secure", "0") === "1",
-        auth: { user: loadSetting("smtp_user", ""), pass: loadSetting("smtp_pass", "") }
+        port,
+        secure,
+        auth: user ? { user, pass } : undefined
       });
       transport.sendMail(
         {
-          from: loadSetting("smtp_from", "") || ('Ssaaxcy Solutions <' + loadSetting("support_email", "support@ssaaxcy.ch") + ">"),
+          from,
           to,
           subject,
           html
@@ -615,6 +763,33 @@ app.use(["/api/bookings", "/api/concierge", "/api/documents"], (req, res, next) 
   next();
 });
 
+// ---- Customer secure access -----------------------------------------------
+app.post("/api/access", writeRateLimit, (req, res) => {
+  const ref = String((req.body && req.body.ref) || "").toUpperCase().trim().slice(0, 40);
+  const email = String((req.body && req.body.email) || "").trim().toLowerCase().slice(0, 160);
+  if (!/^[A-Z0-9-]{5,40}$/.test(ref) || !EMAIL_RE.test(email)) {
+    return res.status(400).json({ ok: false, error: "Reference and email are required." });
+  }
+  const candidates = [
+    { kind: "document", table: "document_requests" },
+    { kind: "booking", table: "bookings" },
+    { kind: "concierge", table: "concierge" }
+  ];
+  let match = null;
+  for (const x of candidates) {
+    const r = one("SELECT ref FROM " + x.table + " WHERE ref = ? AND lower(email) = ?", [ref, email]);
+    if (r) { match = x; break; }
+  }
+  if (!match) {
+    secEvent(req, "customer_access_fail", "Reference/email mismatch for " + ref);
+    return res.status(404).json({ ok: false, error: "No request matched that reference and email." });
+  }
+  const token = newCustomerToken();
+  run("UPDATE " + match.table + " SET access_token_hash = ? WHERE ref = ?", [hashToken(token), ref]);
+  secEvent(req, "customer_access", "Secure access refreshed for " + match.kind + " " + ref);
+  res.json({ ok: true, ref, kind: match.kind, token });
+});
+
 // ---- Uploads & downloads ---------------------------------------------------
 // Public upload: files are stored under random names; the caller links them to
 // a booking / document request / concierge request via the order JSON.
@@ -626,9 +801,16 @@ app.post("/api/upload", writeRateLimit, (req, res) => {
       const tooMany = /too many files/i.test(msg);
       return res.status(413).json({ ok: false, error: tooBig ? "One of the files exceeds the 25 MB limit." : tooMany ? "Maximum 5 files per request." : "Upload failed." });
     }
-    const saved = (req.files || []).map((f) => f.filename);
+    const received = req.files || [];
+    const invalid = received.filter(function (f) { return !validUploadSignature(f); });
+    if (invalid.length) {
+      received.forEach(function (f) { deleteUpload(f.filename); });
+      secEvent(req, "upload_reject", "Rejected upload with invalid file signature");
+      return res.status(400).json({ ok: false, error: "One or more files did not match their declared file type." });
+    }
+    const saved = received.map((f) => f.filename);
     if (!saved.length) return res.status(400).json({ ok: false, error: "No file received. Allowed: PDF, Word, JPG, PNG, HEIC, TXT (max 25 MB each)." });
-    secEvent(req, "upload", "Uploaded " + saved.length + " file(s)");
+    secEvent(req, "upload", "Uploaded " + saved.length + " verified file(s)");
     res.json({ ok: true, files: saved });
   });
 });
@@ -641,24 +823,30 @@ function sendUpload(res, file) {
 }
 
 app.get("/api/documents/:ref/file", refRateLimit, (req, res) => {
+  if (!customerAuthorized(req, res, "document", req.params.ref)) return;
   const d = one("SELECT attachment FROM document_requests WHERE ref = ? AND status != 'blocked'", [req.params.ref]);
   if (!d || !d.attachment) return res.status(404).json({ ok: false, error: "Not found." });
-  sendUpload(res, d.attachment);
+  const first = splitFiles(d.attachment)[0];
+  if (!first) return res.status(404).json({ ok: false, error: "Not found." });
+  sendUpload(res, first);
 });
 
 app.get("/api/documents/:ref/result", refRateLimit, (req, res) => {
+  if (!customerAuthorized(req, res, "document", req.params.ref)) return;
   const d = one("SELECT result_file FROM document_requests WHERE ref = ? AND status = 'done'", [req.params.ref]);
   if (!d || !d.result_file) return res.status(404).json({ ok: false, error: "Not ready yet." });
   sendUpload(res, d.result_file);
 });
 
 app.get("/api/concierge/:ref/result", refRateLimit, (req, res) => {
-  const c = one("SELECT result_file FROM concierge WHERE ref = ? AND status = 'done'", [req.params.ref]);
-  if (!c || !c.result_file) return res.status(404).json({ ok: false, error: "Not ready yet." });
-  sendUpload(res, c.result_file);
+  if (!customerAuthorized(req, res, "concierge", req.params.ref)) return;
+  const row = one("SELECT result_file FROM concierge WHERE ref = ? AND status = 'done'", [req.params.ref]);
+  if (!row || !row.result_file) return res.status(404).json({ ok: false, error: "Not ready yet." });
+  sendUpload(res, row.result_file);
 });
 
 app.get("/api/bookings/:ref/file/:name", refRateLimit, (req, res) => {
+  if (!customerAuthorized(req, res, "booking", req.params.ref)) return;
   const b = one("SELECT files FROM bookings WHERE ref = ?", [req.params.ref]);
   if (!b) return res.status(404).json({ ok: false, error: "Not found." });
   if (splitFiles(b.files).indexOf(req.params.name) === -1) return res.status(404).json({ ok: false, error: "Not found." });
@@ -756,7 +944,9 @@ app.get("/admin/api/2fa/setup", requireAdmin, (req, res) => {
     run("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", ["admin_2fa_secret", secret]);
   }
   const url = otplib.generateURI({ issuer: "Ssaaxcy Solutions", label: "admin", secret });
-  res.json({ ok: true, secret, otpauth: url });
+  qrcode.toDataURL(url, { margin: 1, width: 220, errorCorrectionLevel: "M" })
+    .then(function (qrDataUrl) { res.json({ ok: true, secret, qrDataUrl }); })
+    .catch(function () { res.json({ ok: true, secret, qrDataUrl: "" }); });
 });
 
 app.post("/admin/api/2fa/enable", requireAdmin, (req, res) => {
@@ -820,10 +1010,11 @@ app.get("/api/availability", (req, res) => {
   const date = String(req.query.date || "");
   const mode = MODES.includes(req.query.mode) ? req.query.mode : "video";
   const dur = Number(req.query.duration) || 60;
+  const language = String(req.query.language || "").toUpperCase();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ ok: false, error: "date required (YYYY-MM-DD)." });
   const info = dayInfo(date);
   const min = minBookingDate();
-  const slots = freeSlots(date, mode, dur);
+  const slots = freeSlots(date, mode, dur, language);
   res.json({
     ok: true,
     date,
@@ -834,7 +1025,7 @@ app.get("/api/availability", (req, res) => {
     beforeLead: date < min,
     leadDays: NumberSetting("lead_days") || 2,
     slots,
-    nextFree: nextFree(mode, dur)
+    nextFree: nextFree(mode, dur, language)
   });
 });
 
@@ -843,16 +1034,17 @@ app.get("/api/availability/range", (req, res) => {
   const days = Math.min(Number(req.query.days) || 14, 60);
   const mode = MODES.includes(req.query.mode) ? req.query.mode : "video";
   const dur = Number(req.query.duration) || 60;
+  const language = String(req.query.language || "").toUpperCase();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return res.status(400).json({ ok: false, error: "from required (YYYY-MM-DD)." });
   const d = new Date(from + "T00:00:00Z");
   const out = [];
   for (let i = 0; i < days; i++) {
     const ds = d.toISOString().slice(0, 10);
     const info = dayInfo(ds);
-    out.push({ date: ds, closed: info.closed, reasons: info.reasons, slots: freeSlots(ds, mode, dur) });
+    out.push({ date: ds, closed: info.closed, reasons: info.reasons, slots: freeSlots(ds, mode, dur, language) });
     d.setUTCDate(d.getUTCDate() + 1);
   }
-  res.json({ ok: true, mode, duration: dur, days: out, nextFree: nextFree(mode, dur) });
+  res.json({ ok: true, mode, duration: dur, language, days: out, nextFree: nextFree(mode, dur, language) });
 });
 
 app.post("/api/documents", writeRateLimit, (req, res) => {
@@ -860,7 +1052,9 @@ app.post("/api/documents", writeRateLimit, (req, res) => {
   const docType = one("SELECT * FROM doc_types WHERE id = ? AND active = 1", [String(b.doc_type || "").slice(0, 40)]);
   if (!docType) return res.status(400).json({ ok: false, error: "Unknown document type." });
   if (!EMAIL_RE.test(String(b.email || ""))) return res.status(400).json({ ok: false, error: "Valid email required." });
-  if (!LANG_CODES.includes(b.from_lang) || !LANG_CODES.includes(b.to_lang)) return res.status(400).json({ ok: false, error: "Invalid language pair." });
+  const fromLang = one("SELECT code FROM languages WHERE code = ?", [String(b.from_lang || "").toUpperCase()]);
+  const toLang = one("SELECT code FROM languages WHERE code = ?", [String(b.to_lang || "").toUpperCase()]);
+  if (!fromLang || !toLang) return res.status(400).json({ ok: false, error: "Invalid language pair." });
   if (b.consent !== true && b.consent !== "1" && b.consent !== 1) return res.status(400).json({ ok: false, error: "Privacy consent is required." });
   const mode = ["translate", "fill", "both"].includes(b.mode) ? b.mode : "translate";
   const fields = JSON.stringify({
@@ -869,33 +1063,36 @@ app.post("/api/documents", writeRateLimit, (req, res) => {
     urgent: b.urgent ? "Yes" : "No"
   });
   const ref = genRef("SSXD");
+  const accessToken = newCustomerToken();
   const attachment = splitFiles(b.attachment).slice(0, 3).join(",");
   run(
     `INSERT INTO document_requests
-     (ref, doc_type, doc_type_name, from_lang, to_lang, mode, fields, notes, customer, email, phone, ip, status, consent, attachment)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'received',1,?)`,
+     (ref, doc_type, doc_type_name, from_lang, to_lang, mode, fields, notes, customer, email, phone, ip, status, consent, attachment, access_token_hash)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'received',1,?,?)`,
     [
-      ref, docType.id, docType.name_en, b.from_lang, b.to_lang, mode, fields,
+      ref, docType.id, docType.name_en, fromLang.code, toLang.code, mode, fields,
       String(b.notes || "").slice(0, 2000),
       String(b.customer || "").slice(0, 120),
       String(b.email || "").slice(0, 160),
       String(b.phone || "").slice(0, 40),
       clientIp(req),
-      String(attachment).slice(0, 500)
+      String(attachment).slice(0, 500),
+      hashToken(accessToken)
     ]
   );
   sendMail(b.email, "Ssaaxcy Solutions — document request " + ref, confirmationHtml("We received your document request", [
     ["Reference", ref],
     ["Document", docType.name_en],
-    ["Language", b.from_lang + " → " + b.to_lang],
-    ["Track your request", (process.env.BASE_URL || "https://ssaaxcy.ch") + "/track.html?ref=" + ref],
+    ["Language", fromLang.code + " → " + toLang.code],
+    ["Track your request", secureTrackUrl(ref, accessToken)],
     ["Next step", "Our team completes your document within 2 working days and emails it back to you."]
   ]));
-  res.json({ ok: true, ref });
+  res.json({ ok: true, ref, access_token: accessToken });
 });
 
-// Public document lookup — only non-personal fields
+// Customer document lookup — secure token required.
 app.get("/api/documents/:ref", refRateLimit, (req, res) => {
+  if (!customerAuthorized(req, res, "document", req.params.ref)) return;
   const d = one("SELECT ref, doc_type, doc_type_name, from_lang, to_lang, mode, status, attachment, result_file FROM document_requests WHERE ref = ? AND status != 'blocked'", [req.params.ref]);
   if (!d) return res.status(404).json({ ok: false, error: "Not found." });
   res.json({ ok: true, request: { ref: d.ref, doc_type: d.doc_type, doc_type_name: d.doc_type_name, from_lang: d.from_lang, to_lang: d.to_lang, mode: d.mode, status: d.status, hasFile: !!d.attachment, hasResult: !!d.result_file } });
@@ -903,7 +1100,7 @@ app.get("/api/documents/:ref", refRateLimit, (req, res) => {
 
 app.post("/api/bookings", writeRateLimit, (req, res) => {
   const b = req.body || {};
-  if (!LANG_CODES.includes(b.language_code) || !b.service_id || !b.date || !b.time || !MODES.includes(b.mode)) {
+  if (!b.language_code || !b.service_id || !b.date || !b.time || !MODES.includes(b.mode)) {
     return res.status(400).json({ ok: false, error: "language, service, date, time and mode are required." });
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(b.date) || !/^\d{2}:\d{2}$/.test(b.time)) {
@@ -916,7 +1113,7 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
   const dur = one("SELECT * FROM durations WHERE mins = ?", [Number(b.duration) || 60]);
   if (!service || !lang) return res.status(400).json({ ok: false, error: "Invalid service or language." });
 
-  const block = bookingBlock(b.date, b.time, b.mode, dur ? dur.mins : 60);
+  const block = bookingBlock(b.date, b.time, b.mode, dur ? dur.mins : 60, lang.code);
   if (!block.ok) {
     return res.status(block.status).json({ ok: false, error: block.error, nextFree: block.nextFree });
   }
@@ -933,12 +1130,13 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
   const total = Math.round(100 * (durationPrice + fee)) / 100;
 
   const ref = genRef(loadSetting("ref_prefix", "SSX"));
+  const accessToken = newCustomerToken();
   const method = PAY_METHODS.includes(b.method) ? b.method : "twint";
   const files = splitFiles(b.files).slice(0, 5).join(",");
 
   try {
     tx(function (db) {
-      const recheck = bookingBlock(b.date, b.time, b.mode, dur ? dur.mins : 60);
+      const recheck = bookingBlock(b.date, b.time, b.mode, dur ? dur.mins : 60, lang.code);
       if (!recheck.ok) {
         const err = new Error(recheck.error);
         err.status = recheck.status;
@@ -948,14 +1146,15 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
       db.prepare(
         `INSERT INTO bookings
          (ref, language_code, language_name, service_id, service_name, date, time, duration,
-          mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status, canton, consent, files)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)`
+          mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status, canton, consent, files, access_token_hash, interpreter_id, assignment_status)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)`
       ).run(
         ref, lang.code, lang.name, service.id, service.name, b.date, b.time, dur.mins,
         b.mode, String(b.address || "").slice(0, 240), String(b.customer || "").slice(0, 120),
         String(b.email || "").slice(0, 160), String(b.phone || "").slice(0, 40), String(b.notes || "").slice(0, 2000),
         base, durationPrice, fee, total, method, "requested", canton.slice(0, 60),
-        String(files).slice(0, 500)
+        String(files).slice(0, 500), hashToken(accessToken), recheck.interpreterId,
+        recheck.interpreterId ? "assigned" : "owner"
       );
       db.prepare("INSERT INTO payments (ref, method, amount, status, created_at) VALUES (?,?,?,?,datetime('now'))")
         .run(ref, method, total, "unpaid");
@@ -977,7 +1176,7 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
     ["When", b.date + " at " + b.time],
     ["Mode", b.mode === "on_site" ? "On-site" : "Video"],
     ["Estimated total", "CHF " + total.toFixed(2)],
-    ["Track your request", (process.env.BASE_URL || "https://ssaaxcy.ch") + "/track.html?ref=" + ref],
+    ["Track your request", secureTrackUrl(ref, accessToken)],
     ["Next step", "We will call you shortly to confirm your appointment."]
   ]));
 
@@ -993,32 +1192,25 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
     bank: method === "bank" ? bankDetails(ref, total) : null
   };
 
-  if (method === "twint" && payment.twint) {
-    return twintQrDataUrl(payment.twint.paymentUrl).then(function (qrDataUrl) {
-      payment.twint.qrDataUrl = qrDataUrl;
-      res.json({
-        ok: true, ref, language: lang.name, service: service.name, date: b.date, time: b.time,
-        mode: b.mode, duration: dur ? dur.mins : 60, base_price: base, duration_price: durationPrice,
-        fee, surcharge, canton, total, method, status: "requested", payment
-      });
-    }).catch(function () {
-      res.json({
-        ok: true, ref, language: lang.name, service: service.name, date: b.date, time: b.time,
-        mode: b.mode, duration: dur ? dur.mins : 60, base_price: base, duration_price: durationPrice,
-        fee, surcharge, canton, total, method, status: "requested", payment
-      });
-    });
-  }
-
-  res.json({
-    ok: true, ref, language: lang.name, service: service.name, date: b.date, time: b.time,
+  const payload = {
+    ok: true, ref, access_token: accessToken, language: lang.name, service: service.name, date: b.date, time: b.time,
     mode: b.mode, duration: dur ? dur.mins : 60, base_price: base, duration_price: durationPrice,
     fee, surcharge, canton, total, method, status: "requested", payment
-  });
+  };
+
+  if (method === "twint" && payment.twint && payment.twint.paymentUrl) {
+    return twintQrDataUrl(payment.twint.paymentUrl).then(function (qrDataUrl) {
+      payment.twint.qrDataUrl = qrDataUrl;
+      res.json(payload);
+    }).catch(function () { res.json(payload); });
+  }
+
+  res.json(payload);
 });
 
 // Public booking lookup — returns only what the confirmation page needs (no contact PII)
 app.get("/api/bookings/:ref", refRateLimit, (req, res) => {
+  if (!customerAuthorized(req, res, "booking", req.params.ref)) return;
   const b = one(
     "SELECT ref, language_code, language_name, service_id, service_name, date, time, duration, mode, address, total, method, status, cancel_reason, files FROM bookings WHERE ref = ?",
     [req.params.ref]
@@ -1042,7 +1234,7 @@ app.get("/api/bookings/:ref", refRateLimit, (req, res) => {
   const respond = function (extra) {
     res.json(Object.assign({ ok: true, payment }, extra, { booking: Object.assign({}, b, { files, pay_status: payStatus }) }));
   };
-  if (b.method === "twint") {
+  if (b.method === "twint" && payment.twint && payment.twint.paymentUrl) {
     return twintQrDataUrl(payment.twint.paymentUrl).then(function (qrDataUrl) {
       payment.twint.qrDataUrl = qrDataUrl;
       respond({});
@@ -1053,36 +1245,39 @@ app.get("/api/bookings/:ref", refRateLimit, (req, res) => {
 
 app.post("/api/concierge", writeRateLimit, (req, res) => {
   const c = req.body || {};
-  if (!c.service || !c.detail || !LANG_CODES.includes(c.language_code || "")) {
+  const language = one("SELECT code, name FROM languages WHERE code = ?", [String(c.language_code || "").toUpperCase()]);
+  if (!c.service || !c.detail || !language) {
     return res.status(400).json({ ok: false, error: "service, language and detail are required." });
   }
   if (c.consent !== true && c.consent !== "1" && c.consent !== 1) {
     return res.status(400).json({ ok: false, error: "Privacy consent is required." });
   }
   const ref = genRef("SSX");
+  const accessToken = newCustomerToken();
   const files = splitFiles(c.files).slice(0, 5).join(",");
   run(
-    `INSERT INTO concierge (ref, service, title, language_code, language_name, detail, customer, email, phone, files, status, consent)
-     VALUES (?,?,?,?,?,?,?,?,?,?,'new',1)`,
-    [ref, String(c.service).slice(0, 30), String(c.title || "").slice(0, 200), c.language_code, langName(c.language_code),
+    `INSERT INTO concierge (ref, service, title, language_code, language_name, detail, customer, email, phone, files, status, consent, access_token_hash)
+     VALUES (?,?,?,?,?,?,?,?,?,?,'new',1,?)`,
+    [ref, String(c.service).slice(0, 30), String(c.title || "").slice(0, 200), language.code, language.name,
       String(c.detail).slice(0, 4000), String(c.customer || "").slice(0, 120), String(c.email || "").slice(0, 160),
-      String(c.phone || "").slice(0, 40), String(files).slice(0, 500)]
+      String(c.phone || "").slice(0, 40), String(files).slice(0, 500), hashToken(accessToken)]
   );
   sendMail(c.email, "Ssaaxcy Solutions — concierge request (" + ref + ")", confirmationHtml("We received your concierge request", [
     ["Reference", ref],
     ["Service", c.service],
-    ["Language", c.language_code],
-    ["Track your request", (process.env.BASE_URL || "https://ssaaxcy.ch") + "/track.html?ref=" + ref],
+    ["Language", language.code],
+    ["Track your request", secureTrackUrl(ref, accessToken)],
     ["Next step", "Our team contacts you within one working day."]
   ]));
-  res.json({ ok: true, ref });
+  res.json({ ok: true, ref, access_token: accessToken });
 });
 
-// Public concierge lookup — non-personal fields, used by the tracking page
+// Customer concierge lookup — secure token required.
 app.get("/api/concierge/:ref", refRateLimit, (req, res) => {
-  const c = one("SELECT ref, service, title, language_code, language_name, status, files, result_file FROM concierge WHERE ref = ?", [req.params.ref]);
-  if (!c) return res.status(404).json({ ok: false, error: "Not found." });
-  res.json({ ok: true, request: { ref: c.ref, service: c.service, title: c.title, language_code: c.language_code, language_name: c.language_name, status: c.status, hasFile: !!c.files, hasResult: !!c.result_file } });
+  if (!customerAuthorized(req, res, "concierge", req.params.ref)) return;
+  const row = one("SELECT ref, service, title, language_code, language_name, status, files, result_file FROM concierge WHERE ref = ?", [req.params.ref]);
+  if (!row) return res.status(404).json({ ok: false, error: "Not found." });
+  res.json({ ok: true, request: { ref: row.ref, service: row.service, title: row.title, language_code: row.language_code, language_name: row.language_name, status: row.status, hasFile: !!row.files, hasResult: !!row.result_file } });
 });
 
 // ============================================================== Admin data API
@@ -1158,33 +1353,63 @@ app.get("/admin/api/dashboard", requireAdmin, (req, res) => {
 app.get("/admin/api/bookings", requireAdmin, (req, res) => {
   const f = parseFilters("bookings", req.query, ["status", "mode"]);
   const rows = q("SELECT * FROM bookings" + f.sql + " ORDER BY date DESC, id DESC", f.params);
-  res.json({ ok: true, bookings: rows });
+  const interpreters = q("SELECT id, name, languages, zones, active, is_primary FROM interpreters WHERE active = 1 ORDER BY is_primary DESC, name ASC");
+  res.json({ ok: true, bookings: rows, interpreters });
 });
 
 app.patch("/admin/api/bookings/:id", requireAdmin, (req, res) => {
   const b = req.body || {};
+  if (b.status !== undefined && !allowedStatuses.includes(String(b.status))) {
+    return res.status(400).json({ ok: false, error: "Invalid status." });
+  }
+  const existing = one("SELECT * FROM bookings WHERE id = ?", [req.params.id]);
+  if (!existing) return res.status(404).json({ ok: false, error: "Booking not found." });
+
   const set = [];
   const params = [];
-  ["status", "mode", "date", "time", "duration", "address", "customer", "email", "phone", "notes", "method", "cancel_reason"].forEach((k) => {
+  ["mode", "date", "time", "duration", "address", "customer", "email", "phone", "notes", "method", "cancel_reason"].forEach((k) => {
     if (b[k] !== undefined) { set.push(k + " = ?"); params.push(String(b[k])); }
   });
+  if (b.status !== undefined) {
+    set.push("status = ?");
+    params.push(String(b.status));
+    if (String(b.status) === "to_pay") {
+      set.push("payment_requested_at = datetime('now')");
+    }
+  }
+  if (b.interpreter_id !== undefined) {
+    const workerId = b.interpreter_id === null || b.interpreter_id === "" ? null : Number(b.interpreter_id);
+    if (workerId !== null) {
+      const worker = one("SELECT id FROM interpreters WHERE id = ? AND active = 1", [workerId]);
+      if (!worker) return res.status(400).json({ ok: false, error: "Selected worker is not active." });
+    }
+    set.push("interpreter_id = ?");
+    params.push(workerId);
+    set.push("assignment_status = ?");
+    params.push(workerId ? "assigned" : "owner");
+  }
   if (!set.length) return res.status(400).json({ ok: false, error: "Nothing to update." });
+
   params.push(req.params.id);
   run("UPDATE bookings SET " + set.join(", ") + " WHERE id = ?", params);
   const booking = one("SELECT * FROM bookings WHERE id = ?", [req.params.id]);
-  if (booking && b.status) {
+
+  if (b.status !== undefined) {
     const st = String(b.status);
-    if (!allowedStatuses.includes(st)) return res.status(400).json({ ok: false, error: "Invalid status." });
     if (["paid", "refunded", "cancelled", "pending", "to_pay", "completed", "confirmed"].includes(st)) {
-      run("UPDATE payments SET status = ? WHERE ref = ?", [st, booking.ref]);
+      run("UPDATE payments SET status = ? WHERE ref = ?", [st === "to_pay" ? "unpaid" : st, booking.ref]);
     }
     secEvent(req, "booking_status", booking.ref + " → " + st);
   }
-  res.json({ ok: true });
+  if (b.interpreter_id !== undefined) {
+    secEvent(req, "booking_assignment", booking.ref + " → worker " + String(booking.interpreter_id || "owner"));
+  }
+  res.json({ ok: true, booking });
 });
 
 app.delete("/admin/api/bookings/:id", requireAdmin, (req, res) => {
   const booking = one("SELECT * FROM bookings WHERE id = ?", [req.params.id]);
+  if (booking) splitFiles(booking.files).forEach(deleteUpload);
   run("DELETE FROM payments WHERE ref = ?", [booking ? booking.ref : req.params.id]);
   run("DELETE FROM bookings WHERE id = ?", [req.params.id]);
   if (booking) secEvent(req, "booking_erased", booking.ref + " (GDPR erasure)");
@@ -1205,7 +1430,13 @@ app.patch("/admin/api/concierge/:id", requireAdmin, (req, res) => {
 });
 
 app.delete("/admin/api/concierge/:id", requireAdmin, (req, res) => {
+  const row = one("SELECT ref, files, result_file FROM concierge WHERE id = ?", [req.params.id]);
+  if (row) {
+    splitFiles(row.files).forEach(deleteUpload);
+    if (row.result_file) deleteUpload(row.result_file);
+  }
   run("DELETE FROM concierge WHERE id = ?", [req.params.id]);
+  if (row) secEvent(req, "concierge_erased", row.ref + " (GDPR erasure)");
   res.json({ ok: true });
 });
 
@@ -1215,22 +1446,33 @@ app.get("/admin/api/interpreters", requireAdmin, (req, res) => {
 
 app.post("/admin/api/interpreters", requireAdmin, (req, res) => {
   const b = req.body || {};
-  run(`INSERT INTO interpreters (name, phone, languages, zones, rating, assignments, active) VALUES (?,?,?,?,?,?,?)`,
-    [String(b.name || "").slice(0, 120), String(b.phone || "").slice(0, 40), String(b.languages || "").slice(0, 60),
-      String(b.zones || "").slice(0, 120), Number(b.rating) || 0, Number(b.assignments) || 0, b.active ? 1 : 0]);
-  res.json({ ok: true });
+  const activeCount = one("SELECT COUNT(*) c FROM interpreters WHERE active = 1");
+  const makePrimary = b.is_primary ? 1 : (!activeCount || Number(activeCount.c) === 0 ? 1 : 0);
+  if (makePrimary) run("UPDATE interpreters SET is_primary = 0");
+  const r = run(`INSERT INTO interpreters (name, phone, languages, zones, rating, assignments, active, is_primary) VALUES (?,?,?,?,?,?,?,?)`,
+    [String(b.name || "").slice(0, 120), String(b.phone || "").slice(0, 40), String(b.languages || "").slice(0, 120),
+      String(b.zones || "").slice(0, 120), Number(b.rating) || 0, Number(b.assignments) || 0, b.active ? 1 : 0, makePrimary]);
+  res.json({ ok: true, id: Number(r.lastInsertRowid || 0), is_primary: !!makePrimary });
 });
 
 app.patch("/admin/api/interpreters/:id", requireAdmin, (req, res) => {
   const b = req.body || {};
-  run(`UPDATE interpreters SET name=?, phone=?, languages=?, rating=?, assignments=?, active=? WHERE id=?`,
-    [String(b.name || "").slice(0, 120), String(b.phone || "").slice(0, 40), String(b.languages || "").slice(0, 60),
-      Number(b.rating) || 0, Number(b.assignments) || 0, b.active ? 1 : 0, req.params.id]);
+  const makePrimary = b.is_primary ? 1 : 0;
+  if (makePrimary) run("UPDATE interpreters SET is_primary = 0 WHERE id != ?", [req.params.id]);
+  run(`UPDATE interpreters SET name=?, phone=?, languages=?, zones=?, rating=?, assignments=?, active=?, is_primary=? WHERE id=?`,
+    [String(b.name || "").slice(0, 120), String(b.phone || "").slice(0, 40), String(b.languages || "").slice(0, 120),
+      String(b.zones || "").slice(0, 120), Number(b.rating) || 0, Number(b.assignments) || 0,
+      b.active ? 1 : 0, makePrimary, req.params.id]);
   res.json({ ok: true });
 });
 
 app.delete("/admin/api/interpreters/:id", requireAdmin, (req, res) => {
+  run("UPDATE bookings SET interpreter_id = NULL, assignment_status = 'owner' WHERE interpreter_id = ?", [req.params.id]);
   run("DELETE FROM interpreters WHERE id = ?", [req.params.id]);
+  const primary = one("SELECT id FROM interpreters WHERE active = 1 ORDER BY is_primary DESC, id ASC LIMIT 1");
+  if (primary) {
+    run("UPDATE interpreters SET is_primary = CASE WHEN id = ? THEN 1 ELSE 0 END", [primary.id]);
+  }
   res.json({ ok: true });
 });
 
@@ -1238,7 +1480,7 @@ app.get("/admin/api/catalog", requireAdmin, (req, res) => {
   attachCsrf(res);
   res.json({
     ok: true,
-    settings: publicSettings(),
+    settings: adminSettings(),
     services: q("SELECT * FROM services ORDER BY sort"),
     languages: q("SELECT * FROM languages ORDER BY code"),
     durations: q("SELECT * FROM durations ORDER BY mins"),
@@ -1314,6 +1556,7 @@ app.patch("/admin/api/settings", requireAdmin, (req, res) => {
          "pay_twint_ref", "pay_iban", "pay_bank_name", "twint_payment_url",
          "work_start", "work_end", "work_days", "lead_days", "visit_buffer_min", "video_buffer_min",
          "doc_flat", "doc_flat_tax", "doc_last_minute", "doc_urgent_flat", "retention_months"].includes(k)) {
+      if (k === "smtp_pass" && String(b[k] || "") === "") return;
       run("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", [k, String(b[k]).slice(0, 400)]);
     }
   });
@@ -1336,7 +1579,11 @@ app.patch("/admin/api/documents/:id", requireAdmin, (req, res) => {
 });
 
 app.delete("/admin/api/documents/:id", requireAdmin, (req, res) => {
-  const d = one("SELECT ref FROM document_requests WHERE id = ?", [req.params.id]);
+  const d = one("SELECT ref, attachment, result_file FROM document_requests WHERE id = ?", [req.params.id]);
+  if (d) {
+    splitFiles(d.attachment).forEach(deleteUpload);
+    if (d.result_file) deleteUpload(d.result_file);
+  }
   run("DELETE FROM document_requests WHERE id = ?", [req.params.id]);
   if (d) secEvent(req, "doc_erased", d.ref + " (GDPR erasure)");
   res.json({ ok: true });
@@ -1356,17 +1603,24 @@ const resultUpload = upload.single("file");
 function attachResult(req, res, table, id, email) {
   resultUpload(req, res, function (err) {
     if (err) return res.status(400).json({ ok: false, error: "Upload failed. Max 25 MB (PDF, Word, JPG, PNG, HEIC, TXT)." });
-    const f = req.file && req.file.filename;
+    const file = req.file;
+    const f = file && file.filename;
     if (!f) return res.status(400).json({ ok: false, error: "No file received." });
+    if (!validUploadSignature(file)) {
+      deleteUpload(f);
+      secEvent(req, "result_upload_reject", table + " #" + id + " invalid signature");
+      return res.status(400).json({ ok: false, error: "The uploaded result does not match its declared file type." });
+    }
     const row = one("SELECT ref FROM " + table + " WHERE id = ?", [id]);
-    if (!row) return res.status(404).json({ ok: false, error: "Request not found." });
-    run("UPDATE " + table + " SET result_file = ?, status = 'done' WHERE id = ?", [f, id]);
+    if (!row) { deleteUpload(f); return res.status(404).json({ ok: false, error: "Request not found." }); }
+    const accessToken = newCustomerToken();
+    run("UPDATE " + table + " SET result_file = ?, status = 'done', access_token_hash = ? WHERE id = ?", [f, hashToken(accessToken), id]);
     secEvent(req, "doc_result", table + " #" + id + " result uploaded (" + row.ref + ")");
     if (email) {
       sendMail(email, "Ssaaxcy Solutions — your document is ready (" + row.ref + ")", confirmationHtml("Your document is ready", [
         ["Reference", row.ref],
-        ["Download", (process.env.BASE_URL || "https://ssaaxcy.ch") + "/track.html?ref=" + row.ref],
-        ["Note", "The finished document is available for download on your request page."]
+        ["Download securely", secureTrackUrl(row.ref, accessToken)],
+        ["Note", "The finished document is available for download on your secure request page."]
       ]));
     }
     res.json({ ok: true, file: f });
@@ -1502,25 +1756,80 @@ ensureAdminSeed();
 // --------------------------------------------------------------------------
 // Maintenance — retention & housekeeping
 // --------------------------------------------------------------------------
+function cancelExpiredBooking(ref, reason) {
+  tx(function (db) {
+    db.prepare("UPDATE bookings SET status = 'cancelled', cancel_reason = ? WHERE ref = ?").run(reason, ref);
+    db.prepare("UPDATE payments SET status = 'cancelled' WHERE ref = ?").run(ref);
+  });
+}
+
 function sweepExpiredPayments() {
   try {
-    const rows = q(
-      "SELECT b.ref FROM bookings b JOIN payments p ON p.ref = b.ref " +
-      "WHERE b.status = 'requested' AND p.status = 'unpaid' " +
-      "AND b.created_at <= datetime('now', '-30 minutes')"
+    const requested = q(
+      "SELECT ref FROM bookings WHERE status = 'requested' AND created_at <= datetime('now', '-12 hours')"
     );
-    if (!rows.length) return;
-    rows.forEach(function (r) {
-      tx(function (db) {
-        db.prepare("UPDATE bookings SET status = 'cancelled', cancel_reason = ? WHERE ref = ?")
-          .run("Auto-cancelled: payment not completed within 30 minutes.", r.ref);
-        db.prepare("UPDATE payments SET status = 'cancelled' WHERE ref = ?")
-          .run(r.ref);
-      });
+    requested.forEach(function (r) {
+      cancelExpiredBooking(r.ref, "Auto-cancelled: request was not approved within 12 hours.");
     });
-    console.log("[expiry] auto-cancelled " + rows.length + " unpaid booking(s)");
+
+    const twint = q(
+      "SELECT ref FROM bookings WHERE status = 'to_pay' AND method = 'twint' AND payment_requested_at != '' " +
+      "AND payment_requested_at <= datetime('now', '-45 minutes')"
+    );
+    twint.forEach(function (r) {
+      cancelExpiredBooking(r.ref, "Auto-cancelled: TWINT payment window expired.");
+    });
+
+    const bank = q(
+      "SELECT ref FROM bookings WHERE status = 'to_pay' AND method = 'bank' AND payment_requested_at != '' " +
+      "AND payment_requested_at <= datetime('now', '-48 hours')"
+    );
+    bank.forEach(function (r) {
+      cancelExpiredBooking(r.ref, "Auto-cancelled: bank transfer payment window expired.");
+    });
+
+    const count = requested.length + twint.length + bank.length;
+    if (count) console.log("[expiry] auto-cancelled " + count + " booking(s)");
   } catch (e) {
     console.error("[expiry] failed: " + e.message);
+  }
+}
+
+function removeRecordFiles(rows, fields) {
+  rows.forEach(function (row) {
+    fields.forEach(function (field) {
+      splitFiles(row[field]).forEach(deleteUpload);
+    });
+  });
+}
+
+function removeOrphanUploads() {
+  try {
+    const used = new Set();
+    q("SELECT files FROM bookings").forEach(function (r) { splitFiles(r.files).forEach(function (x) { used.add(x); }); });
+    q("SELECT attachment, result_file FROM document_requests").forEach(function (r) {
+      splitFiles(r.attachment).forEach(function (x) { used.add(x); });
+      splitFiles(r.result_file).forEach(function (x) { used.add(x); });
+    });
+    q("SELECT files, result_file FROM concierge").forEach(function (r) {
+      splitFiles(r.files).forEach(function (x) { used.add(x); });
+      splitFiles(r.result_file).forEach(function (x) { used.add(x); });
+    });
+    const cutoff = Date.now() - 24 * 3600000;
+    fs.readdirSync(UPLOADS_DIR).forEach(function (dir) {
+      const monthDir = path.join(UPLOADS_DIR, dir);
+      if (!fs.statSync(monthDir).isDirectory()) return;
+      fs.readdirSync(monthDir).forEach(function (name) {
+        if (used.has(name)) return;
+        const p = path.join(monthDir, name);
+        try {
+          const st = fs.statSync(p);
+          if (st.isFile() && st.mtimeMs < cutoff) fs.unlinkSync(p);
+        } catch (e) {}
+      });
+    });
+  } catch (e) {
+    console.error("[cleanup] orphan upload scan failed: " + e.message);
   }
 }
 
@@ -1532,9 +1841,21 @@ function runCleanup() {
     run("DELETE FROM ip_blocks WHERE until < datetime('now')");
     const rm = Math.max(1, NumberSetting("retention_months") || 24);
     const cutoff = new Date(Date.now() - rm * 30.44 * 86400000).toISOString().slice(0, 19).replace("T", " ");
+
+    const oldBookings = q("SELECT ref, files FROM bookings WHERE created_at < ? AND status IN ('completed','cancelled','refunded')", [cutoff]);
+    removeRecordFiles(oldBookings, ["files"]);
     run("DELETE FROM bookings WHERE created_at < ? AND status IN ('completed','cancelled','refunded')", [cutoff]);
     run("DELETE FROM payments WHERE ref NOT IN (SELECT ref FROM bookings)");
+
+    const oldDocs = q("SELECT attachment, result_file FROM document_requests WHERE created_at < ? AND status IN ('done','cancelled')", [cutoff]);
+    removeRecordFiles(oldDocs, ["attachment", "result_file"]);
     run("DELETE FROM document_requests WHERE created_at < ? AND status IN ('done','cancelled')", [cutoff]);
+
+    const oldConcierge = q("SELECT files, result_file FROM concierge WHERE created_at < ? AND status IN ('closed','done')", [cutoff]);
+    removeRecordFiles(oldConcierge, ["files", "result_file"]);
+    run("DELETE FROM concierge WHERE created_at < ? AND status IN ('closed','done')", [cutoff]);
+
+    removeOrphanUploads();
     console.log("[cleanup] retention run complete (" + rm + " months)");
   } catch (e) {
     console.error("[cleanup] failed: " + e.message);

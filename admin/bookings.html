@@ -16,6 +16,7 @@
   <script>
     var state = { status: "", mode: "", q: "", ref: new URLSearchParams(window.location.search).get("ref") || "" };
     var ALL = [];
+    var WORKERS = [];
 
     document.addEventListener("DOMContentLoaded", function () {
       SS.guard().then(function (ok) {
@@ -51,8 +52,24 @@
     function load() {
       SS.get(buildQuery()).then(function (d) {
         ALL = d.bookings;
+        WORKERS = d.interpreters || [];
         render();
       }).catch(function (e) { SS.toast(e.message, "error"); });
+    }
+
+    function workerName(id) {
+      if (!id) return "Owner";
+      for (var i = 0; i < WORKERS.length; i++) if (String(WORKERS[i].id) === String(id)) return WORKERS[i].name;
+      return "Worker #" + id;
+    }
+
+    function workerOptions(selected) {
+      var html = '<option value="">Owner / primary operator</option>';
+      WORKERS.forEach(function (w) {
+        html += '<option value="' + SS.esc(w.id) + '"' + (String(selected || "") === String(w.id) ? " selected" : "") + '>' +
+          SS.esc(w.name) + (w.is_primary ? " · Primary" : "") + '</option>';
+      });
+      return html;
     }
 
     function render() {
@@ -68,7 +85,7 @@
       }
       var t = document.getElementById("tbl");
       if (!list.length) { t.innerHTML = '<tr><td class="empty">No bookings match your filters.</td></tr>'; return; }
-      var head = "<thead><tr><th>Ref</th><th>Date</th><th>Situation</th><th>Language</th><th>Mode</th><th>Customer</th><th>Total</th><th>Payment</th><th>Status</th><th></th></tr></thead>";
+      var head = "<thead><tr><th>Ref</th><th>Date</th><th>Situation</th><th>Language</th><th>Mode</th><th>Worker</th><th>Customer</th><th>Total</th><th>Payment</th><th>Status</th><th></th></tr></thead>";
       var rows = list.map(function (b) {
         var hl = b.ref === state.ref ? ' style="background:#f6ead2;"' : "";
         return "<tr" + hl + ">" +
@@ -77,9 +94,10 @@
           "<td>" + SS.txt(b.service_name) + "</td>" +
           "<td>" + SS.txt(b.language_name) + "</td>" +
           "<td>" + (b.mode === "on_site" ? SS.icon("handshake", 14) + " On-site" : SS.icon("video", 14) + " Video") + "</td>" +
+          "<td>" + SS.txt(workerName(b.interpreter_id)) + "</td>" +
           "<td>" + SS.txt(b.customer) + "</td>" +
           "<td><b>" + SS.fmt(b.total) + "</b></td>" +
-          "<td>" + SS.txt(b.method || "card").toUpperCase() + "</td>" +
+          "<td>" + SS.txt(b.method || "twint").toUpperCase() + "</td>" +
           "<td>" + SS.badge(b.status) + "</td>" +
           "<td><button class='icon-btn' onclick='viewBooking(" + b.id + ")'>" + SS.icon("file", 14) + " View</button></td>" +
           "</tr>";
@@ -102,8 +120,12 @@
         '</select>' +
         '<button class="btn btn-dark btn-sm" id="mv-save">Save</button>' +
         '<button class="btn btn-light btn-sm danger" id="mv-del">Delete</button></div>' +
+        '<div class="flex mb" style="margin-top:10px;"><label class="small" style="font-weight:800;min-width:70px;">Worker</label>' +
+        '<select id="mv-worker" class="input" style="flex:1;">' + workerOptions(b.interpreter_id) + '</select>' +
+        '<button class="btn btn-dark btn-sm" id="mv-assign">Assign</button></div>' +
         '<div class="flex mb" style="margin-top:10px;">' +
         '<button class="btn btn-primary btn-sm" id="mv-approve">' + SS.icon("check", 14) + " Approve &amp; ask to pay</button>" +
+        '<button class="btn btn-dark btn-sm" id="mv-paid">' + SS.icon("check", 14) + " Confirm payment</button>" +
         '<button class="btn btn-light btn-sm danger" id="mv-cancel">' + SS.icon("arrow-back", 14) + " Cancel &amp; release slot</button>" +
         "</div>" +
         '</div>' +
@@ -117,6 +139,12 @@
           m.remove(); load(); SS.toast("Status updated.", "success");
         }).catch(function (e) { SS.toast(e.message, "error"); });
       };
+      m.querySelector("#mv-assign").onclick = function () {
+        var v = m.querySelector("#mv-worker").value;
+        SS.patch("/admin/api/bookings/" + id, { interpreter_id: v ? Number(v) : null }).then(function () {
+          m.remove(); load(); SS.toast("Worker assignment updated.", "success");
+        }).catch(function (e) { SS.toast(e.message, "error"); });
+      };
       m.querySelector("#mv-del").onclick = function () {
         SS.confirm("Delete booking " + b.ref + "? This cannot be undone.", function () {
           SS.del("/admin/api/bookings/" + id).then(function () { m.remove(); load(); SS.toast("Booking deleted.", "success"); });
@@ -126,6 +154,13 @@
         SS.confirm("Approve " + b.ref + " and ask the customer to pay " + SS.fmt(b.total) + "? The slot stays reserved for them.", function () {
           SS.patch("/admin/api/bookings/" + id, { status: "to_pay" }).then(function () {
             m.remove(); load(); SS.toast("Approved — payment instructions now shown to customer.", "success");
+          }).catch(function (e) { SS.toast(e.message, "error"); });
+        });
+      };
+      m.querySelector("#mv-paid").onclick = function () {
+        SS.confirm("Confirm that payment for " + b.ref + " has been received?", function () {
+          SS.patch("/admin/api/bookings/" + id, { status: "paid" }).then(function () {
+            m.remove(); load(); SS.toast("Payment confirmed.", "success");
           }).catch(function (e) { SS.toast(e.message, "error"); });
         });
       };
@@ -156,11 +191,11 @@
           '<div class="field mt"><label>Address</label><input class="input" id="e-address" value="' + SS.esc(b.address || "") + '"></div>' +
           '<div class="two-col"><div class="field"><label>Phone</label><input class="input" id="e-phone" value="' + SS.esc(b.phone || "") + '"></div>' +
           '<div class="field" style="margin-left:9px;"><label>Method</label><select class="input" id="e-method">' +
-          '<option>card</option><option>twint</option><option>receipt</option><option>invoice</option></select></div></div>' +
+          '<option value="twint">TWINT</option><option value="bank">Bank transfer</option></select></div></div>' +
           '<div class="field mt"><label>Notes</label><textarea class="input" id="e-notes" style="width:100%;resize:vertical;">' + SS.esc(b.notes || "") + '</textarea></div>' +
           '<button class="btn btn-red btn-sm" id="e-save" style="margin-top:6px;">Save changes</button>';
         var methodSel = box.querySelector("#e-method");
-        ["card", "twint", "receipt", "invoice"].forEach(function (mm) {
+        ["twint", "bank"].forEach(function (mm) {
           if (b.method === mm) methodSel.value = mm;
         });
         box.querySelector("#e-save").onclick = function () {
@@ -171,7 +206,8 @@
             email: box.querySelector("#e-email").value,
             phone: box.querySelector("#e-phone").value,
             address: box.querySelector("#e-address").value,
-            notes: box.querySelector("#e-notes").value
+            notes: box.querySelector("#e-notes").value,
+            method: box.querySelector("#e-method").value
           }).then(function () {
             m.remove(); load(); SS.toast("Booking details saved.", "success");
           }).catch(function (e) { SS.toast(e.message, "error"); });
@@ -187,7 +223,7 @@
         ["Location", b.address], ["Customer", b.customer], ["Email", b.email], ["Phone", b.phone],
         ["Base price", SS.fmt(b.base_price) + " /h"], ["Interpreting", SS.fmt(b.duration_price)],
         ["Travel fee", SS.fmt(b.fee)], ["Total", SS.fmt(b.total)],
-        ["Payment method", b.method], ["Status", b.status], ["Notes", b.notes],
+        ["Payment method", b.method], ["Worker", workerName(b.interpreter_id)], ["Status", b.status], ["Notes", b.notes],
         ["Cancel reason", b.cancel_reason], ["Booked", SS.when(b.created_at)]
       ];
       var files = String(b.files || "").split(",").filter(Boolean);

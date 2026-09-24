@@ -229,7 +229,7 @@
       timesEl.innerHTML = '<p class="muted small">' + t("common.loading") + '</p>';
       var key = state.date + "|" + (state.mode || "video") + "|" + state.duration;
       if (!cache[key]) {
-        SSX.request("GET", "/api/availability?date=" + encodeURIComponent(state.date) + "&mode=" + encodeURIComponent(state.mode || "video") + "&duration=" + state.duration)
+        SSX.request("GET", "/api/availability?date=" + encodeURIComponent(state.date) + "&mode=" + encodeURIComponent(state.mode || "video") + "&duration=" + state.duration + "&language=" + encodeURIComponent(state.language ? state.language.code : ""))
           .then(function (j) { cache[key] = j; paintSlots(j); })
           .catch(function () { timesEl.innerHTML = '<p class="muted small">' + t("err.general") + '</p>'; });
       } else {
@@ -478,7 +478,9 @@
       list.push(booking);
       SSX.saveLocal("ssx.bookings", list);
       SSX.saveLocal("ssx.lastRef", booking.ref);
-      window.location.href = "confirmation.html?ref=" + encodeURIComponent(booking.ref);
+      if (booking.access_token) SSX.saveSecret("ssx.access." + booking.ref, booking.access_token);
+      window.location.href = "confirmation.html?ref=" + encodeURIComponent(booking.ref) +
+        (booking.access_token ? "&token=" + encodeURIComponent(booking.access_token) : "");
     };
 
     var done = function () {
@@ -508,6 +510,7 @@
       }).then(function (res) {
         finish({
           ref: res.ref,
+          access_token: res.access_token,
           service_name: res.service,
           language_name: res.language,
           date: res.date,
