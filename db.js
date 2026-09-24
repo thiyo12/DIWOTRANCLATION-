@@ -183,6 +183,10 @@ function migrate() {
   if (!bCols.includes("files")) {
     d.exec("ALTER TABLE bookings ADD COLUMN files TEXT DEFAULT ''");
   }
+  if (!bCols.includes("interpreter_id")) d.exec("ALTER TABLE bookings ADD COLUMN interpreter_id INTEGER");
+  if (!bCols.includes("assignment_status")) d.exec("ALTER TABLE bookings ADD COLUMN assignment_status TEXT DEFAULT 'assigned'");
+  if (!bCols.includes("payment_requested_at")) d.exec("ALTER TABLE bookings ADD COLUMN payment_requested_at TEXT DEFAULT ''");
+  if (!bCols.includes("access_token_hash")) d.exec("ALTER TABLE bookings ADD COLUMN access_token_hash TEXT DEFAULT ''");
   const sCols = d.prepare("PRAGMA table_info(sessions)").all().map((c) => c.name);
   if (!sCols.includes("csrf_token")) d.exec("ALTER TABLE sessions ADD COLUMN csrf_token TEXT DEFAULT ''");
   if (!sCols.includes("ua_hash")) d.exec("ALTER TABLE sessions ADD COLUMN ua_hash TEXT DEFAULT ''");
@@ -191,23 +195,27 @@ function migrate() {
   const dCols = d.prepare("PRAGMA table_info(document_requests)").all().map((c) => c.name);
   if (!dCols.includes("consent")) d.exec("ALTER TABLE document_requests ADD COLUMN consent INTEGER DEFAULT 0");
   if (!dCols.includes("result_file")) d.exec("ALTER TABLE document_requests ADD COLUMN result_file TEXT DEFAULT ''");
+  if (!dCols.includes("access_token_hash")) d.exec("ALTER TABLE document_requests ADD COLUMN access_token_hash TEXT DEFAULT ''");
   const cCols = d.prepare("PRAGMA table_info(concierge)").all().map((c) => c.name);
   if (!cCols.includes("consent")) d.exec("ALTER TABLE concierge ADD COLUMN consent INTEGER DEFAULT 0");
   if (!cCols.includes("result_file")) d.exec("ALTER TABLE concierge ADD COLUMN result_file TEXT DEFAULT ''");
+  if (!cCols.includes("access_token_hash")) d.exec("ALTER TABLE concierge ADD COLUMN access_token_hash TEXT DEFAULT ''");
+  const iCols = d.prepare("PRAGMA table_info(interpreters)").all().map((c) => c.name);
+  if (!iCols.includes("is_primary")) d.exec("ALTER TABLE interpreters ADD COLUMN is_primary INTEGER DEFAULT 0");
+  d.exec("CREATE INDEX IF NOT EXISTS idx_bookings_interpreter_date ON bookings(interpreter_id, date, time)");
+  d.exec("CREATE INDEX IF NOT EXISTS idx_bookings_access_hash ON bookings(access_token_hash)");
+  d.exec("CREATE INDEX IF NOT EXISTS idx_documents_access_hash ON document_requests(access_token_hash)");
+  d.exec("CREATE INDEX IF NOT EXISTS idx_concierge_access_hash ON concierge(access_token_hash)");
+  // Remove the old demo roster if it is still present. These were never real staff records.
+  d.prepare("DELETE FROM interpreters WHERE phone IN (?,?,?,?,?,?,?,?)").run(
+    "+41 79 111 22 33", "+41 79 222 33 44", "+41 79 333 44 55", "+41 76 444 55 66",
+    "+41 79 555 66 77", "+41 78 666 77 88", "+41 79 777 88 99", "+41 76 888 99 00"
+  );
   const ins = d.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)");
   SEED_SETTINGS.forEach(([k, v]) => ins.run(k, v));
 }
 
-const SEED_INTERPRETERS = [
-  { name: "Amara N.", phone: "+41 79 111 22 33", languages: "TA,DE,EN", zones: "Zurich, Winterthur", rating: 4.9, assignments: 1120, active: 1 },
-  { name: "Elena S.", phone: "+41 79 222 33 44", languages: "DE,EN", zones: "Bern, Basel", rating: 4.8, assignments: 830, active: 1 },
-  { name: "Priya R.", phone: "+41 79 333 44 55", languages: "TA,EN", zones: "Lugano, Bellinzona", rating: 5.0, assignments: 640, active: 1 },
-  { name: "Daniel W.", phone: "+41 76 444 55 66", languages: "DE,EN", zones: "Geneva, Lausanne", rating: 4.7, assignments: 510, active: 1 },
-  { name: "Tharangini M.", phone: "+41 79 555 66 77", languages: "TA,DE", zones: "Zurich, Chur", rating: 4.9, assignments: 420, active: 1 },
-  { name: "Sara M.", phone: "+41 78 666 77 88", languages: "EN,DE", zones: "Geneva, Bern", rating: 4.8, assignments: 385, active: 1 },
-  { name: "Julia K.", phone: "+41 79 777 88 99", languages: "DE,EN,TA", zones: "Basel, Zurich", rating: 4.6, assignments: 300, active: 1 },
-  { name: "Kavya H.", phone: "+41 76 888 99 00", languages: "TA,EN", zones: "Zurich, Winterthur", rating: 4.9, assignments: 250, active: 0 }
-];
+const SEED_INTERPRETERS = []
 
 function seed(force) {
   const d = open();
