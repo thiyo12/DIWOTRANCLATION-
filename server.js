@@ -1468,7 +1468,6 @@ app.delete("/admin/api/interpreters/:id", requireAdmin, (req, res) => {
   }
   res.json({ ok: true });
 });
-});
 
 app.get("/admin/api/catalog", requireAdmin, (req, res) => {
   attachCsrf(res);
