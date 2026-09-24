@@ -151,6 +151,39 @@ function splitFiles(raw) {
   return [];
 }
 
+function deleteUpload(name) {
+  const p = resolveUpload(name);
+  if (!p) return false;
+  try { fs.unlinkSync(p); return true; } catch (e) { return false; }
+}
+
+function validUploadSignature(file) {
+  try {
+    const p = file.path || resolveUpload(file.filename);
+    if (!p) return false;
+    const fd = fs.openSync(p, "r");
+    const buf = Buffer.alloc(32);
+    const read = fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+    const b = buf.subarray(0, read);
+    const ext = String(file.filename || "").split(".").pop().toLowerCase();
+    if (ext === "pdf") return b.subarray(0, 5).toString("ascii") === "%PDF-";
+    if (ext === "jpg" || ext === "jpeg") return b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+    if (ext === "png") return b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]));
+    if (ext === "doc") return b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([0xd0,0xcf,0x11,0xe0,0xa1,0xb1,0x1a,0xe1]));
+    if (ext === "docx") return b.length >= 4 && b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04;
+    if (ext === "heic" || ext === "heif") {
+      const s = b.toString("ascii");
+      return s.indexOf("ftyp") >= 0 && /(heic|heix|hevc|hevx|mif1|msf1)/.test(s);
+    }
+    if (ext === "txt") {
+      const sample = fs.readFileSync(p).subarray(0, 4096);
+      return sample.indexOf(0) === -1;
+    }
+  } catch (e) {}
+  return false;
+}
+
 // Origin allow-list for public writes: cross-site scripts cannot submit forms.
 app.use(["/api/bookings", "/api/documents", "/api/concierge", "/api/upload"], (req, res, next) => {
   const origin = req.headers && req.headers.origin;
@@ -224,12 +257,37 @@ function loadSetting(key, fallback = "") {
   return r ? r.value : fallback;
 }
 
-const SECRET_SETTING_KEYS = new Set(["admin_pw_hash", "admin_2fa_secret"]);
+const PUBLIC_SETTING_KEYS = new Set([
+  "brand_name", "support_email", "support_phone", "whatsapp", "instagram", "facebook", "linkedin", "tiktok",
+  "hero_image_url", "flag_style", "travel_fee", "currency", "ref_prefix", "canton_surcharge",
+  "doc_plain_word", "doc_cert_word", "doc_urgent_pct", "video_price",
+  "pay_twint_ref", "pay_iban", "pay_bank_name", "twint_payment_url",
+  "work_start", "work_end", "work_days", "lead_days", "visit_buffer_min", "video_buffer_min",
+  "doc_flat", "doc_flat_tax", "doc_last_minute", "doc_urgent_flat", "privacy_version"
+]);
+const ADMIN_VISIBLE_SETTING_KEYS = new Set([
+  ...PUBLIC_SETTING_KEYS,
+  "smtp_host", "smtp_port", "smtp_user", "smtp_from", "smtp_secure",
+  "lockout_max", "lockout_minutes", "retention_months", "pause_bookings", "admin_pw_changed"
+]);
+
+function pickSettings(keys) {
+  const all = loadSettings();
+  const out = {};
+  keys.forEach(function (k) {
+    if (Object.prototype.hasOwnProperty.call(all, k)) out[k] = all[k];
+  });
+  return out;
+}
 
 function publicSettings() {
-  const s = loadSettings();
-  SECRET_SETTING_KEYS.forEach((k) => delete s[k]);
-  return s;
+  return pickSettings(PUBLIC_SETTING_KEYS);
+}
+
+function adminSettings() {
+  const out = pickSettings(ADMIN_VISIBLE_SETTING_KEYS);
+  out.smtp_pass_set = !!(process.env.SMTP_PASS || loadSetting("smtp_pass", ""));
+  return out;
 }
 
 function NumberSetting(key) {
@@ -373,7 +431,7 @@ function twintPaymentUrl(ref, total) {
       .replace(/\{amount\}/gi, encodeURIComponent(amount))
       .replace(/\{total\}/gi, encodeURIComponent(String(Number(total) || 0)));
   }
-  return "https://www.twint.ch/merchant-payment/" + encodeURIComponent(ref);
+  return "";
 }
 
 function twintQrDataUrl(url) {
@@ -561,7 +619,12 @@ function confirmationHtml(title, lines) {
 
 function sendMail(to, subject, html) {
   return new Promise((resolve) => {
-    const host = loadSetting("smtp_host", "");
+    const host = process.env.SMTP_HOST || loadSetting("smtp_host", "");
+    const user = process.env.SMTP_USER || loadSetting("smtp_user", "");
+    const pass = process.env.SMTP_PASS || loadSetting("smtp_pass", "");
+    const port = Number(process.env.SMTP_PORT || loadSetting("smtp_port", "587"));
+    const secure = String(process.env.SMTP_SECURE || loadSetting("smtp_secure", "0")) === "1";
+    const from = process.env.SMTP_FROM || loadSetting("smtp_from", "") || ('Ssaaxcy Solutions <' + loadSetting("support_email", "support@ssaaxcy.ch") + ">");
     if (!to || !host) {
       const why = !to ? "no recipient" : "smtp not configured";
       console.log("[mail-deferred] " + why + " :: " + subject + " → " + to);
@@ -570,13 +633,13 @@ function sendMail(to, subject, html) {
     try {
       const transport = nodemailer.createTransport({
         host,
-        port: Number(loadSetting("smtp_port", "587")),
-        secure: loadSetting("smtp_secure", "0") === "1",
-        auth: { user: loadSetting("smtp_user", ""), pass: loadSetting("smtp_pass", "") }
+        port,
+        secure,
+        auth: user ? { user, pass } : undefined
       });
       transport.sendMail(
         {
-          from: loadSetting("smtp_from", "") || ('Ssaaxcy Solutions <' + loadSetting("support_email", "support@ssaaxcy.ch") + ">"),
+          from,
           to,
           subject,
           html
@@ -626,9 +689,16 @@ app.post("/api/upload", writeRateLimit, (req, res) => {
       const tooMany = /too many files/i.test(msg);
       return res.status(413).json({ ok: false, error: tooBig ? "One of the files exceeds the 25 MB limit." : tooMany ? "Maximum 5 files per request." : "Upload failed." });
     }
-    const saved = (req.files || []).map((f) => f.filename);
+    const received = req.files || [];
+    const invalid = received.filter(function (f) { return !validUploadSignature(f); });
+    if (invalid.length) {
+      received.forEach(function (f) { deleteUpload(f.filename); });
+      secEvent(req, "upload_reject", "Rejected upload with invalid file signature");
+      return res.status(400).json({ ok: false, error: "One or more files did not match their declared file type." });
+    }
+    const saved = received.map((f) => f.filename);
     if (!saved.length) return res.status(400).json({ ok: false, error: "No file received. Allowed: PDF, Word, JPG, PNG, HEIC, TXT (max 25 MB each)." });
-    secEvent(req, "upload", "Uploaded " + saved.length + " file(s)");
+    secEvent(req, "upload", "Uploaded " + saved.length + " verified file(s)");
     res.json({ ok: true, files: saved });
   });
 });
@@ -756,7 +826,9 @@ app.get("/admin/api/2fa/setup", requireAdmin, (req, res) => {
     run("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", ["admin_2fa_secret", secret]);
   }
   const url = otplib.generateURI({ issuer: "Ssaaxcy Solutions", label: "admin", secret });
-  res.json({ ok: true, secret, otpauth: url });
+  qrcode.toDataURL(url, { margin: 1, width: 220, errorCorrectionLevel: "M" })
+    .then(function (qrDataUrl) { res.json({ ok: true, secret, qrDataUrl }); })
+    .catch(function () { res.json({ ok: true, secret, qrDataUrl: "" }); });
 });
 
 app.post("/admin/api/2fa/enable", requireAdmin, (req, res) => {
@@ -1238,7 +1310,7 @@ app.get("/admin/api/catalog", requireAdmin, (req, res) => {
   attachCsrf(res);
   res.json({
     ok: true,
-    settings: publicSettings(),
+    settings: adminSettings(),
     services: q("SELECT * FROM services ORDER BY sort"),
     languages: q("SELECT * FROM languages ORDER BY code"),
     durations: q("SELECT * FROM durations ORDER BY mins"),
@@ -1314,6 +1386,7 @@ app.patch("/admin/api/settings", requireAdmin, (req, res) => {
          "pay_twint_ref", "pay_iban", "pay_bank_name", "twint_payment_url",
          "work_start", "work_end", "work_days", "lead_days", "visit_buffer_min", "video_buffer_min",
          "doc_flat", "doc_flat_tax", "doc_last_minute", "doc_urgent_flat", "retention_months"].includes(k)) {
+      if (k === "smtp_pass" && String(b[k] || "") === "") return;
       run("INSERT OR REPLACE INTO settings (key,value) VALUES (?,?)", [k, String(b[k]).slice(0, 400)]);
     }
   });
