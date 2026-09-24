@@ -220,7 +220,7 @@
         SSX.request("POST", "/api/access", { ref: ref, email: email }).then(function (res) {
           openSecure(ref, res.token);
           try {
-            history.replaceState(null, "", "track.html?ref=" + encodeURIComponent(ref) + "&token=" + encodeURIComponent(res.token));
+            history.replaceState(null, "", "track.html?ref=" + encodeURIComponent(ref));
           } catch (e2) {}
         }).catch(function (err) {
           show('<div class="card card-pad"><p class="muted">' + SSX.helpers.esc(err.message || SSX.t("track.notFound")) + "</p></div>");
@@ -230,6 +230,9 @@
       if (auto) {
         inp.value = auto;
         var token = urlToken || SSX.loadSecret("ssx.access." + auto) || "";
+        if (urlToken) {
+          try { history.replaceState(null, "", "track.html?ref=" + encodeURIComponent(auto)); } catch (e3) {}
+        }
         if (token) openSecure(auto, token);
       }
     });
