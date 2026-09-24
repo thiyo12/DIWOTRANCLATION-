@@ -97,7 +97,7 @@
           "<td>" + SS.txt(workerName(b.interpreter_id)) + "</td>" +
           "<td>" + SS.txt(b.customer) + "</td>" +
           "<td><b>" + SS.fmt(b.total) + "</b></td>" +
-          "<td>" + SS.txt(b.method || "card").toUpperCase() + "</td>" +
+          "<td>" + SS.txt(b.method || "twint").toUpperCase() + "</td>" +
           "<td>" + SS.badge(b.status) + "</td>" +
           "<td><button class='icon-btn' onclick='viewBooking(" + b.id + ")'>" + SS.icon("file", 14) + " View</button></td>" +
           "</tr>";
@@ -195,7 +195,7 @@
           '<div class="field mt"><label>Notes</label><textarea class="input" id="e-notes" style="width:100%;resize:vertical;">' + SS.esc(b.notes || "") + '</textarea></div>' +
           '<button class="btn btn-red btn-sm" id="e-save" style="margin-top:6px;">Save changes</button>';
         var methodSel = box.querySelector("#e-method");
-        ["card", "twint", "receipt", "invoice"].forEach(function (mm) {
+        ["twint", "bank"].forEach(function (mm) {
           if (b.method === mm) methodSel.value = mm;
         });
         box.querySelector("#e-save").onclick = function () {
@@ -206,7 +206,8 @@
             email: box.querySelector("#e-email").value,
             phone: box.querySelector("#e-phone").value,
             address: box.querySelector("#e-address").value,
-            notes: box.querySelector("#e-notes").value
+            notes: box.querySelector("#e-notes").value,
+            method: box.querySelector("#e-method").value
           }).then(function () {
             m.remove(); load(); SS.toast("Booking details saved.", "success");
           }).catch(function (e) { SS.toast(e.message, "error"); });
