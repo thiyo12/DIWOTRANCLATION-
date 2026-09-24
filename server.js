@@ -1147,7 +1147,7 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
         `INSERT INTO bookings
          (ref, language_code, language_name, service_id, service_name, date, time, duration,
           mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status, canton, consent, files, access_token_hash, interpreter_id, assignment_status)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)`
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)`
       ).run(
         ref, lang.code, lang.name, service.id, service.name, b.date, b.time, dur.mins,
         b.mode, String(b.address || "").slice(0, 240), String(b.customer || "").slice(0, 120),
