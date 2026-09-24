@@ -185,7 +185,7 @@ function validUploadSignature(file) {
 }
 
 // Origin allow-list for public writes: cross-site scripts cannot submit forms.
-app.use(["/api/bookings", "/api/documents", "/api/concierge", "/api/upload"], (req, res, next) => {
+app.use(["/api/bookings", "/api/documents", "/api/concierge", "/api/upload", "/api/access"], (req, res, next) => {
   const origin = req.headers && req.headers.origin;
   if (origin) {
     try {
@@ -473,7 +473,49 @@ function langName(code) {
 // GATE 2 — identity: admin sessions (hashed in DB), bcrypt, CSRF, 2FA
 // --------------------------------------------------------------------------
 function hashToken(token) {
-  return crypto.createHash("sha256").update(token).digest("hex");
+  return crypto.createHash("sha256").update(String(token || "")).digest("hex");
+}
+
+function newCustomerToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function customerTokenFromRequest(req) {
+  return String((req.headers && req.headers["x-request-token"]) || (req.query && req.query.token) || "").trim();
+}
+
+const REQUEST_TABLES = {
+  booking: "bookings",
+  document: "document_requests",
+  concierge: "concierge"
+};
+
+function customerAuthorized(req, res, kind, ref) {
+  const table = REQUEST_TABLES[kind];
+  if (!table) return null;
+  const row = one("SELECT access_token_hash FROM " + table + " WHERE ref = ?", [ref]);
+  if (!row) {
+    res.status(404).json({ ok: false, error: "Not found." });
+    return null;
+  }
+  const token = customerTokenFromRequest(req);
+  if (!token || !row.access_token_hash) {
+    res.status(401).json({ ok: false, error: "Secure access required. Use your email and reference to open this request." });
+    return null;
+  }
+  const given = Buffer.from(hashToken(token), "hex");
+  const expected = Buffer.from(String(row.access_token_hash), "hex");
+  if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
+    secEvent(req, "customer_token_fail", kind + " " + String(ref).slice(0, 40));
+    res.status(401).json({ ok: false, error: "Secure access link is invalid or expired." });
+    return null;
+  }
+  return row;
+}
+
+function secureTrackUrl(ref, token) {
+  return (process.env.BASE_URL || "https://ssaaxcy.ch") +
+    "/track.html?ref=" + encodeURIComponent(ref) + "&token=" + encodeURIComponent(token);
 }
 
 function requestFingerprint(req) {
@@ -678,6 +720,33 @@ app.use(["/api/bookings", "/api/concierge", "/api/documents"], (req, res, next) 
   next();
 });
 
+// ---- Customer secure access -----------------------------------------------
+app.post("/api/access", writeRateLimit, (req, res) => {
+  const ref = String((req.body && req.body.ref) || "").toUpperCase().trim().slice(0, 40);
+  const email = String((req.body && req.body.email) || "").trim().toLowerCase().slice(0, 160);
+  if (!/^[A-Z0-9-]{5,40}$/.test(ref) || !EMAIL_RE.test(email)) {
+    return res.status(400).json({ ok: false, error: "Reference and email are required." });
+  }
+  const candidates = [
+    { kind: "document", table: "document_requests" },
+    { kind: "booking", table: "bookings" },
+    { kind: "concierge", table: "concierge" }
+  ];
+  let match = null;
+  for (const x of candidates) {
+    const r = one("SELECT ref FROM " + x.table + " WHERE ref = ? AND lower(email) = ?", [ref, email]);
+    if (r) { match = x; break; }
+  }
+  if (!match) {
+    secEvent(req, "customer_access_fail", "Reference/email mismatch for " + ref);
+    return res.status(404).json({ ok: false, error: "No request matched that reference and email." });
+  }
+  const token = newCustomerToken();
+  run("UPDATE " + match.table + " SET access_token_hash = ? WHERE ref = ?", [hashToken(token), ref]);
+  secEvent(req, "customer_access", "Secure access refreshed for " + match.kind + " " + ref);
+  res.json({ ok: true, ref, kind: match.kind, token });
+});
+
 // ---- Uploads & downloads ---------------------------------------------------
 // Public upload: files are stored under random names; the caller links them to
 // a booking / document request / concierge request via the order JSON.
@@ -711,24 +780,30 @@ function sendUpload(res, file) {
 }
 
 app.get("/api/documents/:ref/file", refRateLimit, (req, res) => {
+  if (!customerAuthorized(req, res, "document", req.params.ref)) return;
   const d = one("SELECT attachment FROM document_requests WHERE ref = ? AND status != 'blocked'", [req.params.ref]);
   if (!d || !d.attachment) return res.status(404).json({ ok: false, error: "Not found." });
-  sendUpload(res, d.attachment);
+  const first = splitFiles(d.attachment)[0];
+  if (!first) return res.status(404).json({ ok: false, error: "Not found." });
+  sendUpload(res, first);
 });
 
 app.get("/api/documents/:ref/result", refRateLimit, (req, res) => {
+  if (!customerAuthorized(req, res, "document", req.params.ref)) return;
   const d = one("SELECT result_file FROM document_requests WHERE ref = ? AND status = 'done'", [req.params.ref]);
   if (!d || !d.result_file) return res.status(404).json({ ok: false, error: "Not ready yet." });
   sendUpload(res, d.result_file);
 });
 
 app.get("/api/concierge/:ref/result", refRateLimit, (req, res) => {
-  const c = one("SELECT result_file FROM concierge WHERE ref = ? AND status = 'done'", [req.params.ref]);
-  if (!c || !c.result_file) return res.status(404).json({ ok: false, error: "Not ready yet." });
-  sendUpload(res, c.result_file);
+  if (!customerAuthorized(req, res, "concierge", req.params.ref)) return;
+  const row = one("SELECT result_file FROM concierge WHERE ref = ? AND status = 'done'", [req.params.ref]);
+  if (!row || !row.result_file) return res.status(404).json({ ok: false, error: "Not ready yet." });
+  sendUpload(res, row.result_file);
 });
 
 app.get("/api/bookings/:ref/file/:name", refRateLimit, (req, res) => {
+  if (!customerAuthorized(req, res, "booking", req.params.ref)) return;
   const b = one("SELECT files FROM bookings WHERE ref = ?", [req.params.ref]);
   if (!b) return res.status(404).json({ ok: false, error: "Not found." });
   if (splitFiles(b.files).indexOf(req.params.name) === -1) return res.status(404).json({ ok: false, error: "Not found." });
