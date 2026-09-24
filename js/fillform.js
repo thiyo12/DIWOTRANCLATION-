@@ -353,7 +353,7 @@
           return;
         }
         SSX.saveLocal("ssx.lastDocRef", res.ref);
-        if (res.access_token) SSX.saveLocal("ssx.access." + res.ref, res.access_token);
+        if (res.access_token) SSX.saveSecret("ssx.access." + res.ref, res.access_token);
         window.location.href = "confirmation.html?ref=" + encodeURIComponent(res.ref) + "&kind=document" +
           (res.access_token ? "&token=" + encodeURIComponent(res.access_token) : "");
       }).catch(function (err) {
