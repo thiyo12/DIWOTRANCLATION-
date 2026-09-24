@@ -1055,7 +1055,7 @@ app.get("/api/documents/:ref", refRateLimit, (req, res) => {
 
 app.post("/api/bookings", writeRateLimit, (req, res) => {
   const b = req.body || {};
-  if (!LANG_CODES.includes(b.language_code) || !b.service_id || !b.date || !b.time || !MODES.includes(b.mode)) {
+  if (!b.language_code || !b.service_id || !b.date || !b.time || !MODES.includes(b.mode)) {
     return res.status(400).json({ ok: false, error: "language, service, date, time and mode are required." });
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(b.date) || !/^\d{2}:\d{2}$/.test(b.time)) {
@@ -1085,6 +1085,7 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
   const total = Math.round(100 * (durationPrice + fee)) / 100;
 
   const ref = genRef(loadSetting("ref_prefix", "SSX"));
+  const accessToken = newCustomerToken();
   const method = PAY_METHODS.includes(b.method) ? b.method : "twint";
   const files = splitFiles(b.files).slice(0, 5).join(",");
 
@@ -1100,14 +1101,14 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
       db.prepare(
         `INSERT INTO bookings
          (ref, language_code, language_name, service_id, service_name, date, time, duration,
-          mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status, canton, consent, files)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?)`
+          mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status, canton, consent, files, access_token_hash)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`
       ).run(
         ref, lang.code, lang.name, service.id, service.name, b.date, b.time, dur.mins,
         b.mode, String(b.address || "").slice(0, 240), String(b.customer || "").slice(0, 120),
         String(b.email || "").slice(0, 160), String(b.phone || "").slice(0, 40), String(b.notes || "").slice(0, 2000),
         base, durationPrice, fee, total, method, "requested", canton.slice(0, 60),
-        String(files).slice(0, 500)
+        String(files).slice(0, 500), hashToken(accessToken)
       );
       db.prepare("INSERT INTO payments (ref, method, amount, status, created_at) VALUES (?,?,?,?,datetime('now'))")
         .run(ref, method, total, "unpaid");
@@ -1129,7 +1130,7 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
     ["When", b.date + " at " + b.time],
     ["Mode", b.mode === "on_site" ? "On-site" : "Video"],
     ["Estimated total", "CHF " + total.toFixed(2)],
-    ["Track your request", (process.env.BASE_URL || "https://ssaaxcy.ch") + "/track.html?ref=" + ref],
+    ["Track your request", secureTrackUrl(ref, accessToken)],
     ["Next step", "We will call you shortly to confirm your appointment."]
   ]));
 
@@ -1145,32 +1146,25 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
     bank: method === "bank" ? bankDetails(ref, total) : null
   };
 
-  if (method === "twint" && payment.twint) {
-    return twintQrDataUrl(payment.twint.paymentUrl).then(function (qrDataUrl) {
-      payment.twint.qrDataUrl = qrDataUrl;
-      res.json({
-        ok: true, ref, language: lang.name, service: service.name, date: b.date, time: b.time,
-        mode: b.mode, duration: dur ? dur.mins : 60, base_price: base, duration_price: durationPrice,
-        fee, surcharge, canton, total, method, status: "requested", payment
-      });
-    }).catch(function () {
-      res.json({
-        ok: true, ref, language: lang.name, service: service.name, date: b.date, time: b.time,
-        mode: b.mode, duration: dur ? dur.mins : 60, base_price: base, duration_price: durationPrice,
-        fee, surcharge, canton, total, method, status: "requested", payment
-      });
-    });
-  }
-
-  res.json({
-    ok: true, ref, language: lang.name, service: service.name, date: b.date, time: b.time,
+  const payload = {
+    ok: true, ref, access_token: accessToken, language: lang.name, service: service.name, date: b.date, time: b.time,
     mode: b.mode, duration: dur ? dur.mins : 60, base_price: base, duration_price: durationPrice,
     fee, surcharge, canton, total, method, status: "requested", payment
-  });
+  };
+
+  if (method === "twint" && payment.twint && payment.twint.paymentUrl) {
+    return twintQrDataUrl(payment.twint.paymentUrl).then(function (qrDataUrl) {
+      payment.twint.qrDataUrl = qrDataUrl;
+      res.json(payload);
+    }).catch(function () { res.json(payload); });
+  }
+
+  res.json(payload);
 });
 
 // Public booking lookup — returns only what the confirmation page needs (no contact PII)
 app.get("/api/bookings/:ref", refRateLimit, (req, res) => {
+  if (!customerAuthorized(req, res, "booking", req.params.ref)) return;
   const b = one(
     "SELECT ref, language_code, language_name, service_id, service_name, date, time, duration, mode, address, total, method, status, cancel_reason, files FROM bookings WHERE ref = ?",
     [req.params.ref]
@@ -1194,7 +1188,7 @@ app.get("/api/bookings/:ref", refRateLimit, (req, res) => {
   const respond = function (extra) {
     res.json(Object.assign({ ok: true, payment }, extra, { booking: Object.assign({}, b, { files, pay_status: payStatus }) }));
   };
-  if (b.method === "twint") {
+  if (b.method === "twint" && payment.twint && payment.twint.paymentUrl) {
     return twintQrDataUrl(payment.twint.paymentUrl).then(function (qrDataUrl) {
       payment.twint.qrDataUrl = qrDataUrl;
       respond({});
