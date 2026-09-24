@@ -1007,7 +1007,9 @@ app.post("/api/documents", writeRateLimit, (req, res) => {
   const docType = one("SELECT * FROM doc_types WHERE id = ? AND active = 1", [String(b.doc_type || "").slice(0, 40)]);
   if (!docType) return res.status(400).json({ ok: false, error: "Unknown document type." });
   if (!EMAIL_RE.test(String(b.email || ""))) return res.status(400).json({ ok: false, error: "Valid email required." });
-  if (!LANG_CODES.includes(b.from_lang) || !LANG_CODES.includes(b.to_lang)) return res.status(400).json({ ok: false, error: "Invalid language pair." });
+  const fromLang = one("SELECT code FROM languages WHERE code = ?", [String(b.from_lang || "").toUpperCase()]);
+  const toLang = one("SELECT code FROM languages WHERE code = ?", [String(b.to_lang || "").toUpperCase()]);
+  if (!fromLang || !toLang) return res.status(400).json({ ok: false, error: "Invalid language pair." });
   if (b.consent !== true && b.consent !== "1" && b.consent !== 1) return res.status(400).json({ ok: false, error: "Privacy consent is required." });
   const mode = ["translate", "fill", "both"].includes(b.mode) ? b.mode : "translate";
   const fields = JSON.stringify({
@@ -1016,33 +1018,36 @@ app.post("/api/documents", writeRateLimit, (req, res) => {
     urgent: b.urgent ? "Yes" : "No"
   });
   const ref = genRef("SSXD");
+  const accessToken = newCustomerToken();
   const attachment = splitFiles(b.attachment).slice(0, 3).join(",");
   run(
     `INSERT INTO document_requests
-     (ref, doc_type, doc_type_name, from_lang, to_lang, mode, fields, notes, customer, email, phone, ip, status, consent, attachment)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'received',1,?)`,
+     (ref, doc_type, doc_type_name, from_lang, to_lang, mode, fields, notes, customer, email, phone, ip, status, consent, attachment, access_token_hash)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'received',1,?,?)`,
     [
-      ref, docType.id, docType.name_en, b.from_lang, b.to_lang, mode, fields,
+      ref, docType.id, docType.name_en, fromLang.code, toLang.code, mode, fields,
       String(b.notes || "").slice(0, 2000),
       String(b.customer || "").slice(0, 120),
       String(b.email || "").slice(0, 160),
       String(b.phone || "").slice(0, 40),
       clientIp(req),
-      String(attachment).slice(0, 500)
+      String(attachment).slice(0, 500),
+      hashToken(accessToken)
     ]
   );
   sendMail(b.email, "Ssaaxcy Solutions — document request " + ref, confirmationHtml("We received your document request", [
     ["Reference", ref],
     ["Document", docType.name_en],
-    ["Language", b.from_lang + " → " + b.to_lang],
-    ["Track your request", (process.env.BASE_URL || "https://ssaaxcy.ch") + "/track.html?ref=" + ref],
+    ["Language", fromLang.code + " → " + toLang.code],
+    ["Track your request", secureTrackUrl(ref, accessToken)],
     ["Next step", "Our team completes your document within 2 working days and emails it back to you."]
   ]));
-  res.json({ ok: true, ref });
+  res.json({ ok: true, ref, access_token: accessToken });
 });
 
-// Public document lookup — only non-personal fields
+// Customer document lookup — secure token required.
 app.get("/api/documents/:ref", refRateLimit, (req, res) => {
+  if (!customerAuthorized(req, res, "document", req.params.ref)) return;
   const d = one("SELECT ref, doc_type, doc_type_name, from_lang, to_lang, mode, status, attachment, result_file FROM document_requests WHERE ref = ? AND status != 'blocked'", [req.params.ref]);
   if (!d) return res.status(404).json({ ok: false, error: "Not found." });
   res.json({ ok: true, request: { ref: d.ref, doc_type: d.doc_type, doc_type_name: d.doc_type_name, from_lang: d.from_lang, to_lang: d.to_lang, mode: d.mode, status: d.status, hasFile: !!d.attachment, hasResult: !!d.result_file } });
