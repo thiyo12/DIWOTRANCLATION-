@@ -343,69 +343,112 @@ function dayInfo(dateStr) {
   if (pauseEnabled()) reason.push("paused");
   return { closed: reason.length > 0, reasons: reason, day };
 }
-function activeBookings(dateStr) {
+function activeWorkers(languageCode) {
+  const rows = q("SELECT id, name, languages, zones, is_primary FROM interpreters WHERE active = 1 ORDER BY is_primary DESC, id ASC");
+  const code = String(languageCode || "").toUpperCase();
+  if (!code) return rows;
+  return rows.filter(function (w) {
+    return String(w.languages || "").split(",").map(function (x) { return x.trim().toUpperCase(); }).includes(code);
+  });
+}
+
+function workerRosterEnabled() {
+  const r = one("SELECT COUNT(*) c FROM interpreters WHERE active = 1");
+  return !!(r && Number(r.c) > 0);
+}
+
+function activeBookings(dateStr, interpreterId) {
+  if (interpreterId) {
+    // Unassigned legacy/current-owner bookings block every worker until Admin assigns them.
+    return q(
+      "SELECT date, time, duration, mode, status, interpreter_id FROM bookings WHERE date = ? AND (interpreter_id = ? OR interpreter_id IS NULL) AND status IN ('requested','to_pay','pending','confirmed','paid','completed')",
+      [dateStr, interpreterId]
+    );
+  }
   return q(
-    "SELECT date, time, duration, mode, status FROM bookings WHERE date = ? AND status IN ('requested','to_pay','pending','confirmed','paid','completed')",
+    "SELECT date, time, duration, mode, status, interpreter_id FROM bookings WHERE date = ? AND status IN ('requested','to_pay','pending','confirmed','paid','completed')",
     [dateStr]
   );
 }
-function occupiedIntervals(dateStr) {
-  return activeBookings(dateStr).map(function (b) {
+
+function occupiedIntervals(dateStr, interpreterId) {
+  return activeBookings(dateStr, interpreterId).map(function (b) {
     const s = parseHM(b.time);
     if (s === null) return null;
     const buf = bufferFor(b.mode);
     return { from: s - buf, to: s + (Number(b.duration) || 60) + buf };
   }).filter(Boolean);
 }
-function isBusy(dateStr, startMin, durMins) {
-  const iv = occupiedIntervals(dateStr);
+
+function isBusy(dateStr, startMin, durMins, interpreterId) {
+  const iv = occupiedIntervals(dateStr, interpreterId);
   const a = startMin, b = startMin + durMins;
   for (const x of iv) {
     if (a < x.to && b > x.from) return true;
   }
   return false;
 }
-function freeSlots(dateStr, mode, durMins) {
+
+function availableWorker(dateStr, startMin, durMins, languageCode) {
+  const workers = activeWorkers(languageCode);
+  for (const w of workers) {
+    if (!isBusy(dateStr, startMin, durMins, w.id)) return w;
+  }
+  return null;
+}
+
+function freeSlots(dateStr, mode, durMins, languageCode) {
   const info = dayInfo(dateStr);
   if (info.closed) return [];
   if (dateStr < minBookingDate()) return [];
   const w = workBounds();
   const dur = Number(durMins) || 60;
   const out = [];
+  const roster = workerRosterEnabled();
   for (let t = w.start; t + dur <= w.end; t += 30) {
-    if (!isBusy(dateStr, t, dur)) out.push(fmtHM(t));
+    const free = roster ? !!availableWorker(dateStr, t, dur, languageCode) : !isBusy(dateStr, t, dur, null);
+    if (free) out.push(fmtHM(t));
   }
   return out;
 }
-function nextFree(mode, durMins) {
+
+function nextFree(mode, durMins, languageCode) {
   const from = minBookingDate();
   const d = new Date(from + "T00:00:00Z");
   for (let i = 0; i < 21; i++) {
     const ds = d.toISOString().slice(0, 10);
-    const slots = freeSlots(ds, mode, durMins);
+    const slots = freeSlots(ds, mode, durMins, languageCode);
     if (slots.length) return { date: ds, time: slots[0] };
     d.setUTCDate(d.getUTCDate() + 1);
   }
   return { date: null, time: null };
 }
-function bookingBlock(dateStr, timeStr, mode, durMins) {
+
+function bookingBlock(dateStr, timeStr, mode, durMins, languageCode) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return { ok: false, status: 400, error: "Invalid date." };
-  if (pauseEnabled()) return { ok: false, status: 409, error: "We are not taking new appointments right now.", nextFree: nextFree(mode, durMins) };
+  if (pauseEnabled()) return { ok: false, status: 409, error: "We are not taking new appointments right now.", nextFree: nextFree(mode, durMins, languageCode) };
   const info = dayInfo(dateStr);
   if (info.closed) {
-    if (info.reasons.includes("override")) return { ok: false, status: 409, error: "This day is no longer available.", nextFree: nextFree(mode, durMins) };
+    if (info.reasons.includes("override")) return { ok: false, status: 409, error: "This day is no longer available.", nextFree: nextFree(mode, durMins, languageCode) };
     return { ok: false, status: 400, error: "This day is not a working day." };
   }
   if (dateStr < minBookingDate()) return { ok: false, status: 400, error: "Appointments must be requested at least " + (NumberSetting("lead_days") || 2) + " days in advance." };
   const t = parseHM(timeStr);
   if (t === null) return { ok: false, status: 400, error: "Invalid time." };
   const dur = Number(durMins) || 60;
-  const w = workBounds();
-  if (t < w.start || t + dur > w.end) return { ok: false, status: 400, error: "This time is outside working hours." };
-  if (isBusy(dateStr, t, dur)) {
-    return { ok: false, status: 409, error: "This time was just taken by someone else.", nextFree: nextFree(mode, dur) };
+  const bounds = workBounds();
+  if (t < bounds.start || t + dur > bounds.end) return { ok: false, status: 400, error: "This time is outside working hours." };
+
+  if (workerRosterEnabled()) {
+    const worker = availableWorker(dateStr, t, dur, languageCode);
+    if (!worker) return { ok: false, status: 409, error: "This time was just taken by someone else.", nextFree: nextFree(mode, dur, languageCode) };
+    return { ok: true, interpreterId: worker.id };
   }
-  return { ok: true };
+
+  if (isBusy(dateStr, t, dur, null)) {
+    return { ok: false, status: 409, error: "This time was just taken by someone else.", nextFree: nextFree(mode, dur, languageCode) };
+  }
+  return { ok: true, interpreterId: null };
 }
 
 function genRef(prefix) {
@@ -967,10 +1010,11 @@ app.get("/api/availability", (req, res) => {
   const date = String(req.query.date || "");
   const mode = MODES.includes(req.query.mode) ? req.query.mode : "video";
   const dur = Number(req.query.duration) || 60;
+  const language = String(req.query.language || "").toUpperCase();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ ok: false, error: "date required (YYYY-MM-DD)." });
   const info = dayInfo(date);
   const min = minBookingDate();
-  const slots = freeSlots(date, mode, dur);
+  const slots = freeSlots(date, mode, dur, language);
   res.json({
     ok: true,
     date,
@@ -981,7 +1025,7 @@ app.get("/api/availability", (req, res) => {
     beforeLead: date < min,
     leadDays: NumberSetting("lead_days") || 2,
     slots,
-    nextFree: nextFree(mode, dur)
+    nextFree: nextFree(mode, dur, language)
   });
 });
 
@@ -990,16 +1034,17 @@ app.get("/api/availability/range", (req, res) => {
   const days = Math.min(Number(req.query.days) || 14, 60);
   const mode = MODES.includes(req.query.mode) ? req.query.mode : "video";
   const dur = Number(req.query.duration) || 60;
+  const language = String(req.query.language || "").toUpperCase();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return res.status(400).json({ ok: false, error: "from required (YYYY-MM-DD)." });
   const d = new Date(from + "T00:00:00Z");
   const out = [];
   for (let i = 0; i < days; i++) {
     const ds = d.toISOString().slice(0, 10);
     const info = dayInfo(ds);
-    out.push({ date: ds, closed: info.closed, reasons: info.reasons, slots: freeSlots(ds, mode, dur) });
+    out.push({ date: ds, closed: info.closed, reasons: info.reasons, slots: freeSlots(ds, mode, dur, language) });
     d.setUTCDate(d.getUTCDate() + 1);
   }
-  res.json({ ok: true, mode, duration: dur, days: out, nextFree: nextFree(mode, dur) });
+  res.json({ ok: true, mode, duration: dur, language, days: out, nextFree: nextFree(mode, dur, language) });
 });
 
 app.post("/api/documents", writeRateLimit, (req, res) => {
@@ -1068,7 +1113,7 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
   const dur = one("SELECT * FROM durations WHERE mins = ?", [Number(b.duration) || 60]);
   if (!service || !lang) return res.status(400).json({ ok: false, error: "Invalid service or language." });
 
-  const block = bookingBlock(b.date, b.time, b.mode, dur ? dur.mins : 60);
+  const block = bookingBlock(b.date, b.time, b.mode, dur ? dur.mins : 60, lang.code);
   if (!block.ok) {
     return res.status(block.status).json({ ok: false, error: block.error, nextFree: block.nextFree });
   }
@@ -1091,7 +1136,7 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
 
   try {
     tx(function (db) {
-      const recheck = bookingBlock(b.date, b.time, b.mode, dur ? dur.mins : 60);
+      const recheck = bookingBlock(b.date, b.time, b.mode, dur ? dur.mins : 60, lang.code);
       if (!recheck.ok) {
         const err = new Error(recheck.error);
         err.status = recheck.status;
@@ -1101,14 +1146,15 @@ app.post("/api/bookings", writeRateLimit, (req, res) => {
       db.prepare(
         `INSERT INTO bookings
          (ref, language_code, language_name, service_id, service_name, date, time, duration,
-          mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status, canton, consent, files, access_token_hash)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`
+          mode, address, customer, email, phone, notes, base_price, duration_price, fee, total, method, status, canton, consent, files, access_token_hash, interpreter_id, assignment_status)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)`
       ).run(
         ref, lang.code, lang.name, service.id, service.name, b.date, b.time, dur.mins,
         b.mode, String(b.address || "").slice(0, 240), String(b.customer || "").slice(0, 120),
         String(b.email || "").slice(0, 160), String(b.phone || "").slice(0, 40), String(b.notes || "").slice(0, 2000),
         base, durationPrice, fee, total, method, "requested", canton.slice(0, 60),
-        String(files).slice(0, 500), hashToken(accessToken)
+        String(files).slice(0, 500), hashToken(accessToken), recheck.interpreterId,
+        recheck.interpreterId ? "assigned" : "owner"
       );
       db.prepare("INSERT INTO payments (ref, method, amount, status, created_at) VALUES (?,?,?,?,datetime('now'))")
         .run(ref, method, total, "unpaid");
