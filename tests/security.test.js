@@ -13,11 +13,21 @@ process.env.BASE_URL = "http://127.0.0.1";
 const app = require("../server");
 const { run } = require("../db");
 
-const server = app.listen(0, "127.0.0.1");
-const base = "http://127.0.0.1:" + server.address().port;
+let server;
+let base = "";
 
-test.after(() => {
-  server.close();
+test.before(async () => {
+  server = await new Promise((resolve, reject) => {
+    const s = app.listen(0, "127.0.0.1", () => resolve(s));
+    s.once("error", reject);
+  });
+  base = "http://127.0.0.1:" + server.address().port;
+});
+
+test.after(async () => {
+  if (server) {
+    await new Promise((resolve) => server.close(resolve));
+  }
   try { fs.rmSync(dbPath, { force: true }); } catch (e) {}
   try { fs.rmSync(dbPath + "-wal", { force: true }); } catch (e) {}
   try { fs.rmSync(dbPath + "-shm", { force: true }); } catch (e) {}
