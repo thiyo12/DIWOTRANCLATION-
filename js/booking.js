@@ -478,7 +478,7 @@
       list.push(booking);
       SSX.saveLocal("ssx.bookings", list);
       SSX.saveLocal("ssx.lastRef", booking.ref);
-      if (booking.access_token) SSX.saveLocal("ssx.access." + booking.ref, booking.access_token);
+      if (booking.access_token) SSX.saveSecret("ssx.access." + booking.ref, booking.access_token);
       window.location.href = "confirmation.html?ref=" + encodeURIComponent(booking.ref) +
         (booking.access_token ? "&token=" + encodeURIComponent(booking.access_token) : "");
     };
