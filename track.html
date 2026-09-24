@@ -201,7 +201,7 @@
 
       function openSecure(ref, token) {
         if (!ref || !token) return;
-        SSX.saveLocal("ssx.access." + ref, token);
+        SSX.saveSecret("ssx.access." + ref, token);
         lookup(ref, token);
       }
 
@@ -209,7 +209,7 @@
         e.preventDefault();
         var ref = inp.value.toUpperCase().trim();
         if (!ref) return;
-        var saved = SSX.loadLocal("ssx.access." + ref) || "";
+        var saved = SSX.loadSecret("ssx.access." + ref) || "";
         if (saved) return openSecure(ref, saved);
         var email = emailInp.value.trim();
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
@@ -229,7 +229,7 @@
 
       if (auto) {
         inp.value = auto;
-        var token = urlToken || SSX.loadLocal("ssx.access." + auto) || "";
+        var token = urlToken || SSX.loadSecret("ssx.access." + auto) || "";
         if (token) openSecure(auto, token);
       }
     });
