@@ -1353,29 +1353,58 @@ app.get("/admin/api/dashboard", requireAdmin, (req, res) => {
 app.get("/admin/api/bookings", requireAdmin, (req, res) => {
   const f = parseFilters("bookings", req.query, ["status", "mode"]);
   const rows = q("SELECT * FROM bookings" + f.sql + " ORDER BY date DESC, id DESC", f.params);
-  res.json({ ok: true, bookings: rows });
+  const interpreters = q("SELECT id, name, languages, zones, active, is_primary FROM interpreters WHERE active = 1 ORDER BY is_primary DESC, name ASC");
+  res.json({ ok: true, bookings: rows, interpreters });
 });
 
 app.patch("/admin/api/bookings/:id", requireAdmin, (req, res) => {
   const b = req.body || {};
+  if (b.status !== undefined && !allowedStatuses.includes(String(b.status))) {
+    return res.status(400).json({ ok: false, error: "Invalid status." });
+  }
+  const existing = one("SELECT * FROM bookings WHERE id = ?", [req.params.id]);
+  if (!existing) return res.status(404).json({ ok: false, error: "Booking not found." });
+
   const set = [];
   const params = [];
-  ["status", "mode", "date", "time", "duration", "address", "customer", "email", "phone", "notes", "method", "cancel_reason"].forEach((k) => {
+  ["mode", "date", "time", "duration", "address", "customer", "email", "phone", "notes", "method", "cancel_reason"].forEach((k) => {
     if (b[k] !== undefined) { set.push(k + " = ?"); params.push(String(b[k])); }
   });
+  if (b.status !== undefined) {
+    set.push("status = ?");
+    params.push(String(b.status));
+    if (String(b.status) === "to_pay") {
+      set.push("payment_requested_at = CASE WHEN payment_requested_at = '' OR payment_requested_at IS NULL THEN datetime('now') ELSE payment_requested_at END");
+    }
+  }
+  if (b.interpreter_id !== undefined) {
+    const workerId = b.interpreter_id === null || b.interpreter_id === "" ? null : Number(b.interpreter_id);
+    if (workerId !== null) {
+      const worker = one("SELECT id FROM interpreters WHERE id = ? AND active = 1", [workerId]);
+      if (!worker) return res.status(400).json({ ok: false, error: "Selected worker is not active." });
+    }
+    set.push("interpreter_id = ?");
+    params.push(workerId);
+    set.push("assignment_status = ?");
+    params.push(workerId ? "assigned" : "owner");
+  }
   if (!set.length) return res.status(400).json({ ok: false, error: "Nothing to update." });
+
   params.push(req.params.id);
   run("UPDATE bookings SET " + set.join(", ") + " WHERE id = ?", params);
   const booking = one("SELECT * FROM bookings WHERE id = ?", [req.params.id]);
-  if (booking && b.status) {
+
+  if (b.status !== undefined) {
     const st = String(b.status);
-    if (!allowedStatuses.includes(st)) return res.status(400).json({ ok: false, error: "Invalid status." });
     if (["paid", "refunded", "cancelled", "pending", "to_pay", "completed", "confirmed"].includes(st)) {
-      run("UPDATE payments SET status = ? WHERE ref = ?", [st, booking.ref]);
+      run("UPDATE payments SET status = ? WHERE ref = ?", [st === "to_pay" ? "unpaid" : st, booking.ref]);
     }
     secEvent(req, "booking_status", booking.ref + " → " + st);
   }
-  res.json({ ok: true });
+  if (b.interpreter_id !== undefined) {
+    secEvent(req, "booking_assignment", booking.ref + " → worker " + String(booking.interpreter_id || "owner"));
+  }
+  res.json({ ok: true, booking });
 });
 
 app.delete("/admin/api/bookings/:id", requireAdmin, (req, res) => {
@@ -1410,23 +1439,35 @@ app.get("/admin/api/interpreters", requireAdmin, (req, res) => {
 
 app.post("/admin/api/interpreters", requireAdmin, (req, res) => {
   const b = req.body || {};
-  run(`INSERT INTO interpreters (name, phone, languages, zones, rating, assignments, active) VALUES (?,?,?,?,?,?,?)`,
-    [String(b.name || "").slice(0, 120), String(b.phone || "").slice(0, 40), String(b.languages || "").slice(0, 60),
-      String(b.zones || "").slice(0, 120), Number(b.rating) || 0, Number(b.assignments) || 0, b.active ? 1 : 0]);
-  res.json({ ok: true });
+  const activeCount = one("SELECT COUNT(*) c FROM interpreters WHERE active = 1");
+  const makePrimary = b.is_primary ? 1 : (!activeCount || Number(activeCount.c) === 0 ? 1 : 0);
+  if (makePrimary) run("UPDATE interpreters SET is_primary = 0");
+  const r = run(`INSERT INTO interpreters (name, phone, languages, zones, rating, assignments, active, is_primary) VALUES (?,?,?,?,?,?,?,?)`,
+    [String(b.name || "").slice(0, 120), String(b.phone || "").slice(0, 40), String(b.languages || "").slice(0, 120),
+      String(b.zones || "").slice(0, 120), Number(b.rating) || 0, Number(b.assignments) || 0, b.active ? 1 : 0, makePrimary]);
+  res.json({ ok: true, id: Number(r.lastInsertRowid || 0), is_primary: !!makePrimary });
 });
 
 app.patch("/admin/api/interpreters/:id", requireAdmin, (req, res) => {
   const b = req.body || {};
-  run(`UPDATE interpreters SET name=?, phone=?, languages=?, rating=?, assignments=?, active=? WHERE id=?`,
-    [String(b.name || "").slice(0, 120), String(b.phone || "").slice(0, 40), String(b.languages || "").slice(0, 60),
-      Number(b.rating) || 0, Number(b.assignments) || 0, b.active ? 1 : 0, req.params.id]);
+  const makePrimary = b.is_primary ? 1 : 0;
+  if (makePrimary) run("UPDATE interpreters SET is_primary = 0 WHERE id != ?", [req.params.id]);
+  run(`UPDATE interpreters SET name=?, phone=?, languages=?, zones=?, rating=?, assignments=?, active=?, is_primary=? WHERE id=?`,
+    [String(b.name || "").slice(0, 120), String(b.phone || "").slice(0, 40), String(b.languages || "").slice(0, 120),
+      String(b.zones || "").slice(0, 120), Number(b.rating) || 0, Number(b.assignments) || 0,
+      b.active ? 1 : 0, makePrimary, req.params.id]);
   res.json({ ok: true });
 });
 
 app.delete("/admin/api/interpreters/:id", requireAdmin, (req, res) => {
+  run("UPDATE bookings SET interpreter_id = NULL, assignment_status = 'owner' WHERE interpreter_id = ?", [req.params.id]);
   run("DELETE FROM interpreters WHERE id = ?", [req.params.id]);
+  const primary = one("SELECT id FROM interpreters WHERE active = 1 ORDER BY is_primary DESC, id ASC LIMIT 1");
+  if (primary) {
+    run("UPDATE interpreters SET is_primary = CASE WHEN id = ? THEN 1 ELSE 0 END", [primary.id]);
+  }
   res.json({ ok: true });
+});
 });
 
 app.get("/admin/api/catalog", requireAdmin, (req, res) => {
