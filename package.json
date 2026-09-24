@@ -5,10 +5,11 @@
   "main": "start.js",
   "scripts": {
     "start": "node start.js",
-    "seed": "node -e \"const {initDb}=require('./db');initDb(true);console.log('Database seeded.');process.exit(0)\""
+    "seed": "node -e \"const {initDb}=require('./db');initDb(true);console.log('Database seeded.');process.exit(0)\"",
+    "test": "node --test tests/*.test.js"
   },
   "engines": {
-    "node": ">=23.4.0"
+    "node": ">=22.5.0"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
