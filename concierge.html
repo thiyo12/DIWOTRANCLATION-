@@ -236,8 +236,9 @@
         website: document.querySelector("#concierge-form .hp-field").value
       };
 
-      var finish = function (ref) {
-        SSX.saveLocal("ssx.lastConcierge", Object.assign({ ref: ref }, payload));
+      var finish = function (ref, accessToken) {
+        if (accessToken) SSX.saveLocal("ssx.access." + ref, accessToken);
+        SSX.saveLocal("ssx.lastConcierge", Object.assign({ ref: ref, access_token: accessToken || "" }, payload));
         var modal = SSX.openModal(
           "<h3>" + SSX.t("cf.sentTitle") + "</h3>" +
           "<p class=\"muted\" style=\"margin:12px 0;\">" + SSX.t("cf.ref") + " <b>" + SSX.helpers.esc(ref) + "</b><br>" +
@@ -253,7 +254,7 @@
       if (SSX.http) {
         SSX.request("POST", "/api/concierge", payload).then(function (res) {
           btn.disabled = false; btn.textContent = SSX.t("cf.send");
-          finish(res.ref);
+          finish(res.ref, res.access_token);
         }).catch(function (err) {
           btn.disabled = false; btn.textContent = SSX.t("cf.send");
           SSX.toast(err.message || SSX.t("err.general"), "error");
