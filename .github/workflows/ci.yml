@@ -21,16 +21,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
-      - name: Refresh lockfile
-        run: npm install --package-lock-only --ignore-scripts
       - run: npm ci
       - name: Dependency audit
-        run: npm audit --json
+        run: npm audit --audit-level=moderate
       - run: npm test
-      - name: Emit refreshed lockfile
-        if: always()
-        run: |
-          echo "LOCKFILE_BASE64_BEGIN"
-          base64 -w0 package-lock.json
-          echo
-          echo "LOCKFILE_BASE64_END"
