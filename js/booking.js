@@ -229,7 +229,7 @@
       timesEl.innerHTML = '<p class="muted small">' + t("common.loading") + '</p>';
       var key = state.date + "|" + (state.mode || "video") + "|" + state.duration;
       if (!cache[key]) {
-        SSX.request("GET", "/api/availability?date=" + encodeURIComponent(state.date) + "&mode=" + encodeURIComponent(state.mode || "video") + "&duration=" + state.duration)
+        SSX.request("GET", "/api/availability?date=" + encodeURIComponent(state.date) + "&mode=" + encodeURIComponent(state.mode || "video") + "&duration=" + state.duration + "&language=" + encodeURIComponent(state.language ? state.language.code : ""))
           .then(function (j) { cache[key] = j; paintSlots(j); })
           .catch(function () { timesEl.innerHTML = '<p class="muted small">' + t("err.general") + '</p>'; });
       } else {
