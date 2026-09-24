@@ -478,7 +478,9 @@
       list.push(booking);
       SSX.saveLocal("ssx.bookings", list);
       SSX.saveLocal("ssx.lastRef", booking.ref);
-      window.location.href = "confirmation.html?ref=" + encodeURIComponent(booking.ref);
+      if (booking.access_token) SSX.saveLocal("ssx.access." + booking.ref, booking.access_token);
+      window.location.href = "confirmation.html?ref=" + encodeURIComponent(booking.ref) +
+        (booking.access_token ? "&token=" + encodeURIComponent(booking.access_token) : "");
     };
 
     var done = function () {
@@ -508,6 +510,7 @@
       }).then(function (res) {
         finish({
           ref: res.ref,
+          access_token: res.access_token,
           service_name: res.service,
           language_name: res.language,
           date: res.date,
