@@ -81,8 +81,14 @@
       var params = new URLSearchParams(window.location.search);
       var ref = params.get("ref");
       var isDoc = params.get("kind") === "document" || (ref && ref.indexOf("SSXD") === 0);
-      curAccessToken = params.get("token") || (ref ? SSX.loadSecret("ssx.access." + ref) : "") || "";
+      var tokenFromUrl = params.get("token") || "";
+      curAccessToken = tokenFromUrl || (ref ? SSX.loadSecret("ssx.access." + ref) : "") || "";
       if (ref && curAccessToken) SSX.saveSecret("ssx.access." + ref, curAccessToken);
+      if (ref && tokenFromUrl) {
+        try {
+          history.replaceState(null, "", "confirmation.html?ref=" + encodeURIComponent(ref) + (isDoc ? "&kind=document" : ""));
+        } catch (e) {}
+      }
       if (!ref) ref = SSX.loadLocal(isDoc ? "ssx.lastDocRef" : "ssx.lastRef");
       if (!ref) { window.location.href = isDoc ? "fillform.html" : "booking.html"; return; }
 
